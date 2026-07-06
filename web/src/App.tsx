@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import Suggestions from "./components/Suggestions";
 import TradeDetails from "./components/TradeDetails";
 import DacsGuide from "./components/DacsGuide";
+import Positions from "./components/Positions";
 import { strategyColor, strategyLabel } from "./lib";
-import type { Candidate, PayoffPoint, Review } from "./types";
+import type { Candidate, PayoffPoint, Position, Review } from "./types";
 
 interface Group {
   strategy: string;
@@ -12,6 +13,7 @@ interface Group {
 
 export default function App() {
   const [groups, setGroups] = useState<Group[]>([]);
+  const [positions, setPositions] = useState<Position[]>([]);
   const [sel, setSel] = useState(0);
   const [payoff, setPayoff] = useState<PayoffPoint[]>([]);
   const [review, setReview] = useState<Review | null>(null);
@@ -23,6 +25,19 @@ export default function App() {
       .then((d) => setGroups(d.groups ?? []))
       .catch(() => {});
 
+  const refreshPositions = () =>
+    fetch("/api/positions")
+      .then((r) => r.json())
+      .then((d) => setPositions(d.positions ?? []))
+      .catch(() => {});
+
+  const openPosition = async (c: Candidate) => {
+    const idx = c.u_idx ?? 0;
+    const r = await fetch(`/api/positions/open/${c.underlying}/${idx}`, { method: "POST" });
+    if (!r.ok) throw new Error("open failed");
+    await refreshPositions();
+  };
+
   useEffect(() => {
     let ws: WebSocket;
     let closed = false;
@@ -32,6 +47,7 @@ export default function App() {
       ws.onopen = () => {
         setConnected(true);
         refreshTop();
+        refreshPositions();
       };
       ws.onclose = () => {
         setConnected(false);
@@ -39,7 +55,10 @@ export default function App() {
       };
       ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
-        if (msg.type === "candidates" || msg.type === "snapshot") refreshTop();
+        if (msg.type === "candidates" || msg.type === "snapshot") {
+          refreshTop();
+          refreshPositions();   // a scan may have swept the Exit Manager too
+        }
       };
     };
     connect();
@@ -110,6 +129,7 @@ export default function App() {
                   trades={g.trades}
                   selected={sel - offset}
                   onSelect={(i) => setSel(offset + i)}
+                  onOpenPosition={openPosition}
                 />
               </section>
             );
@@ -120,6 +140,10 @@ export default function App() {
           <TradeDetails candidate={current} points={payoff} review={review} />
         </section>
       </div>
+
+      <section className="mt-5">
+        <Positions positions={positions} />
+      </section>
 
       <section className="mt-5">
         <DacsGuide />

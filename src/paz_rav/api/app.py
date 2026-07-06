@@ -174,8 +174,13 @@ def create_app(
                 d["u_idx"] = i
                 d["verdict"] = verdict
                 by_strat.setdefault(c.strategy, []).append(d)
+        # "take" always outranks "caution" — the committee's endorsement is the primary
+        # sort key, the deterministic score only breaks ties within the same tier. This is
+        # what makes a genuinely AI-endorsed trade surface even over a higher-scoring
+        # "caution" one; otherwise the AI review would just be decoration.
+        _VERDICT_RANK = {"take": 0, "caution": 1}
         for rows in by_strat.values():
-            rows.sort(key=lambda d: d["score"], reverse=True)
+            rows.sort(key=lambda d: (_VERDICT_RANK.get(d["verdict"], 9), -d["score"]))
 
         groups = [{"strategy": s, "trades": by_strat.get(s, [])[:n]}
                   for s in FOCUS_STRATEGIES if s in by_strat]

@@ -66,6 +66,16 @@ def test_top_excludes_pass_verdicts():
                 assert t["verdict"] != "pass"  # committee-rejected trades never surface here
 
 
+def test_top_ranks_take_before_caution():
+    with make_client() as c:
+        r = c.get("/api/top?n=6").json()
+        rank = {"take": 0, "caution": 1}
+        for g in r["groups"]:
+            ranks = [rank[t["verdict"]] for t in g["trades"]]
+            assert ranks == sorted(ranks), (
+                f"{g['strategy']}: a 'caution' trade outranked a 'take' trade")
+
+
 def test_open_position_and_list(monkeypatch):
     with make_client() as c:
         opened = c.post("/api/positions/open/SPY/0").json()

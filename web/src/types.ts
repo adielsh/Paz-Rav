@@ -48,3 +48,21 @@ export interface Review {
   revisions?: number;
   context?: { regime: string; iv_rank: number; rsi: number | null };
 }
+
+export type CloseReason = "profit_target" | "stop_loss" | "time_stop" | "expired" | "manual";
+
+export interface Position {
+  id: string;
+  underlying: string;
+  strategy: string;
+  legs: Leg[];
+  entry_credit: number;
+  opened_at: string;
+  status: "open" | "closed";
+  close_reason: CloseReason | null;
+  closed_at: string | null;
+  realized_pnl: number | null;
+  unrealized_pnl?: number;
+  meta?: Record<string, number | string>;
+  langfuse_trace_id?: string | null;
+}

@@ -1,4 +1,4 @@
-import type { Candidate } from "./types";
+import type { Candidate, Leg } from "./types";
 
 export function strategyLabel(name: string): string {
   switch (name) {
@@ -15,7 +15,7 @@ export function strategyColor(name: string): string {
   return name === "iron_condor" ? "#d6a854" : "#6da3da";
 }
 
-export function shortStrikes(c: Candidate): string {
+export function shortStrikes(c: { legs: Leg[] }): string {
   const s = c.legs
     .filter((l) => l.side === "sell")
     .map((l) => l.strike)
@@ -31,5 +31,22 @@ export function num(meta: Candidate["meta"], key: string): number | undefined {
 export function frontExpiry(c: Candidate): string {
   const dates = c.legs.map((l) => l.expiry).filter((e): e is string => !!e).sort();
   return dates[0] ?? `${c.dte}d`;
+}
+
+export function closeReasonLabel(reason: string | null): string {
+  switch (reason) {
+    case "profit_target":
+      return "יעד רווח";
+    case "stop_loss":
+      return "סטופ";
+    case "time_stop":
+      return "עצירת זמן";
+    case "expired":
+      return "פקיעה";
+    case "manual":
+      return "ידני";
+    default:
+      return reason ?? "";
+  }
 }
 
