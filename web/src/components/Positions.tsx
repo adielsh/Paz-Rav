@@ -13,12 +13,13 @@ const ALERT_LABEL: Record<string, string> = {
 function Pnl({ value }: { value: number | null | undefined }) {
   if (value == null) return <span className="text-slate-500">—</span>;
   return (
-    <span className={value >= 0 ? "text-good" : "text-bad"}>
-      {value >= 0 ? "+" : ""}
-      {value.toFixed(2)}
+    <span className={`font-semibold ${value >= 0 ? "text-good" : "text-bad"}`}>
+      {value >= 0 ? "+" : "-"}${Math.abs(value).toFixed(2)}
     </span>
   );
 }
+
+type Direction = "received" | "paid";
 
 function CloseForm({
   onConfirm,
@@ -27,44 +28,89 @@ function CloseForm({
   onConfirm: (exitCredit: number) => Promise<void>;
   onCancel: () => void;
 }) {
-  const [value, setValue] = useState("");
+  const [direction, setDirection] = useState<Direction>("received");
+  const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
 
+  const parsed = parseFloat(amount);
+  const valid = !Number.isNaN(parsed) && parsed >= 0;
+
   const submit = async () => {
-    const n = parseFloat(value);
-    if (Number.isNaN(n)) return;
+    if (!valid) return;
     setBusy(true);
-    await onConfirm(n);
+    const exitCredit = direction === "received" ? parsed : -parsed;
+    await onConfirm(exitCredit);
   };
 
   return (
-    <div className="flex items-center gap-2 mt-2 p-2 rounded-lg bg-white/5 border border-line" dir="rtl">
-      <span className="text-[12px] text-slate-300 whitespace-nowrap">
-        כמה קיבלת (או שילמת) בסגירת כל הפוזיציה?
-      </span>
-      <input
-        autoFocus
-        type="number"
-        step="0.01"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        placeholder="למשל 1.10 או -0.30"
-        className="w-28 text-sm font-mono px-2 py-1 rounded bg-panel border border-line text-slate-100"
-      />
-      <button
-        onClick={submit}
-        disabled={busy || value === ""}
-        className="text-[12px] font-semibold px-2.5 py-1 rounded bg-good/20 text-good border border-good/40 disabled:opacity-50"
-      >
-        {busy ? "שומר…" : "אשר סגירה"}
-      </button>
-      <button
-        onClick={onCancel}
-        disabled={busy}
-        className="text-[12px] px-2.5 py-1 rounded text-slate-400 border border-line"
-      >
-        ביטול
-      </button>
+    <div className="mt-3 p-3 rounded-lg bg-white/5 border border-line" dir="rtl">
+      <div className="text-[12px] text-slate-300 mb-2">בסגירת כל הפוזיציה:</div>
+
+      <div className="flex items-center gap-3 flex-wrap">
+        {/* received / paid segmented toggle */}
+        <div className="inline-flex rounded-lg border border-line overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setDirection("received")}
+            className={`text-[13px] font-semibold px-3 py-1.5 transition ${
+              direction === "received" ? "bg-good/25 text-good" : "text-slate-400 hover:bg-white/5"
+            }`}
+          >
+            💰 קיבלתי
+          </button>
+          <button
+            type="button"
+            onClick={() => setDirection("paid")}
+            className={`text-[13px] font-semibold px-3 py-1.5 border-r border-line transition ${
+              direction === "paid" ? "bg-bad/25 text-bad" : "text-slate-400 hover:bg-white/5"
+            }`}
+          >
+            💸 שילמתי
+          </button>
+        </div>
+
+        {/* amount, always positive, with a clear $ prefix */}
+        <div className="relative">
+          <span className="absolute inset-y-0 right-3 flex items-center text-slate-400 font-mono text-sm pointer-events-none">
+            $
+          </span>
+          <input
+            autoFocus
+            type="number"
+            inputMode="decimal"
+            step="0.01"
+            min="0"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="0.00"
+            dir="ltr"
+            className="w-28 text-right text-sm font-mono font-semibold pl-2 pr-7 py-1.5 rounded-lg bg-panel border border-line text-slate-100 focus:border-accent outline-none"
+          />
+        </div>
+
+        <button
+          onClick={submit}
+          disabled={busy || !valid}
+          className="text-[12px] font-semibold px-3 py-1.5 rounded-lg bg-good/20 text-good border border-good/40 disabled:opacity-40 disabled:cursor-default"
+        >
+          {busy ? "שומר…" : "אשר סגירה"}
+        </button>
+        <button
+          onClick={onCancel}
+          disabled={busy}
+          className="text-[12px] px-3 py-1.5 rounded-lg text-slate-400 border border-line hover:border-slate-500"
+        >
+          ביטול
+        </button>
+      </div>
+
+      {amount !== "" && valid && (
+        <div className="text-[11px] font-mono text-slate-500 mt-2">
+          יירשם כ: <span className={direction === "received" ? "text-good" : "text-bad"}>
+            {direction === "received" ? "+" : "-"}${parsed.toFixed(2)}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
