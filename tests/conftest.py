@@ -16,7 +16,8 @@ from paz_rav.config import get_settings
 
 @pytest.fixture(autouse=True)
 def _no_real_secrets(monkeypatch):
-    for key in ("ANTHROPIC_API_KEY", "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY"):
+    for key in ("ANTHROPIC_API_KEY", "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY",
+                "ALLOWED_EMAIL", "FIREBASE_PROJECT_ID", "GMAIL_APP_PASSWORD"):
         monkeypatch.setenv(key, "")   # empty string outranks the .env file's real value
     get_settings.cache_clear()
     yield

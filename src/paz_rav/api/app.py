@@ -15,11 +15,13 @@ from collections.abc import AsyncIterator
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from paz_rav import __version__
+from paz_rav.access_requests_memory import InMemoryAccessRequestRepository
+from paz_rav.auth import require_auth, require_auth_ws
 from paz_rav.backtest import pnl_at_expiry
 from paz_rav.bus import CH_CANDIDATES, CH_FEATURES, InMemoryBus
 from paz_rav.quant.valuation import structure_pnl
@@ -50,6 +52,7 @@ async def _build_real_stores(settings):
     import redis.asyncio as aioredis
 
     from paz_rav.bus.redis_bus import RedisBus
+    from paz_rav.store.postgres_access_requests import PostgresAccessRequestRepository
     from paz_rav.store.postgres_position_repo import PostgresPositionRepository
     from paz_rav.store.postgres_store import PostgresCandidateRepository
     from paz_rav.store.redis_store import RedisFeatureStore, RedisIVHistory
@@ -57,7 +60,9 @@ async def _build_real_stores(settings):
     r = aioredis.from_url(settings.redis_url, decode_responses=True)
     candidate_repo = await PostgresCandidateRepository.connect(settings.database_url)
     position_repo = await PostgresPositionRepository.connect(settings.database_url)
-    return RedisFeatureStore(r), RedisIVHistory(r), RedisBus(r), candidate_repo, position_repo
+    access_repo = await PostgresAccessRequestRepository.connect(settings.database_url)
+    return (RedisFeatureStore(r), RedisIVHistory(r), RedisBus(r), candidate_repo,
+            position_repo, access_repo)
 
 
 def create_app(
@@ -95,18 +100,20 @@ def create_app(
     iv_history = InMemoryIVHistory()
     candidate_repo = InMemoryCandidateRepository()
     bus = InMemoryBus()
-    # Placeholder; swapped for PostgresPositionRepository inside `lifespan` (same
+    # Placeholders; swapped for the Postgres-backed repos inside `lifespan` (same
     # correct-event-loop reasoning as the other stores) when PAZ_PERSIST=redis_postgres.
     position_repo = InMemoryPositionRepository()
+    access_repo = InMemoryAccessRequestRepository()
     pipeline = Pipeline(feed, feature_store, iv_history, candidate_repo, bus, config,
                         strategies=FOCUS_STRATEGIES, position_repo=position_repo)
     scheduler = Scheduler(pipeline, underlyings, interval=interval, today=today)
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        nonlocal feature_store, iv_history, bus, candidate_repo, position_repo, pipeline, scheduler
+        nonlocal feature_store, iv_history, bus, candidate_repo, position_repo, access_repo, pipeline, scheduler
         if settings.paz_persist == "redis_postgres":
-            feature_store, iv_history, bus, candidate_repo, position_repo = await _build_real_stores(settings)
+            (feature_store, iv_history, bus, candidate_repo,
+             position_repo, access_repo) = await _build_real_stores(settings)
             pipeline = Pipeline(feed, feature_store, iv_history, candidate_repo, bus, config,
                                 strategies=FOCUS_STRATEGIES, position_repo=position_repo)
             scheduler = Scheduler(pipeline, underlyings, interval=interval, today=today)
@@ -123,6 +130,21 @@ def create_app(
 
     app = FastAPI(title="Paz Rav", version=__version__, lifespan=lifespan)
 
+    @app.middleware("http")
+    async def auth_gate(request, call_next):
+        # Guards every /api/* route in one place (rather than Depends() on each route
+        # function) so a future route is protected by default, not by remembering to add
+        # it. /health, /auth-config, /admin/approve, /, and /assets/* stay open — the
+        # health check, the pre-login config check, the emailed approval link, and the
+        # SPA shell (which shows the login screen itself) must load before anyone is
+        # authenticated.
+        if request.url.path.startswith("/api/"):
+            try:
+                await require_auth(request, access_repo)
+            except HTTPException as e:
+                return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
+        return await call_next(request)
+
     async def _features() -> list[dict]:
         out = []
         for u in underlyings:
@@ -138,6 +160,24 @@ def create_app(
     def health() -> dict:
         return {"status": "ok", "version": __version__,
                 "underlyings": underlyings, "strategies": list_strategies()}
+
+    @app.get("/auth-config")
+    def auth_config() -> dict:
+        """Public (unguarded — not under /api/): lets the frontend skip the whole Google
+        Sign-In flow entirely when ALLOWED_EMAIL isn't set (local/dev default)."""
+        s = get_settings()
+        return {"required": bool(s.allowed_email),
+                "firebaseProjectId": s.firebase_project_id if s.allowed_email else None}
+
+    @app.get("/admin/approve")
+    async def admin_approve(token: str) -> HTMLResponse:
+        """Public (unguarded, not under /api/) — the link emailed by notify.py. Anyone
+        who *has* the token can approve it, same as any emailed magic-link; the token is
+        a 24-byte random string, not guessable."""
+        req = await access_repo.approve_by_token(token)
+        if req is None:
+            return HTMLResponse("<h1>Invalid or already-used link</h1>", status_code=404)
+        return HTMLResponse(f"<h1>Approved</h1><p>{req.email} can now sign in.</p>")
 
     @app.get("/api/underlyings")
     def api_underlyings() -> dict:
@@ -298,6 +338,11 @@ def create_app(
 
     @app.websocket("/ws")
     async def ws(websocket: WebSocket) -> None:
+        # Browsers can't send custom headers on a WebSocket handshake, so the token
+        # travels as ?token=... instead; require_auth_ws closes the socket itself on
+        # failure (a no-op, always True, when ALLOWED_EMAIL isn't configured).
+        if not await require_auth_ws(websocket, access_repo):
+            return
         await websocket.accept()
         await websocket.send_json({
             "type": "snapshot",

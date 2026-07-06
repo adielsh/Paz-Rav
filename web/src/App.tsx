@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
+import type { User } from "firebase/auth";
 import Suggestions from "./components/Suggestions";
 import TradeDetails from "./components/TradeDetails";
 import DacsGuide from "./components/DacsGuide";
 import Positions from "./components/Positions";
 import AmbientBackground from "./components/AmbientBackground";
 import KpiStrip from "./components/KpiStrip";
+import { SignedInBar } from "./AuthGate";
+import { authedFetch } from "./api";
+import { currentIdToken } from "./auth";
 import { strategyColor, strategyLabel } from "./lib";
 import type { Candidate, PayoffPoint, Position, Review } from "./types";
 
@@ -49,7 +53,7 @@ function ConnectionBadge({ connected }: { connected: boolean }) {
   );
 }
 
-export default function App() {
+export default function App({ user }: { user: User | null }) {
   const [groups, setGroups] = useState<Group[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [sel, setSel] = useState(0);
@@ -58,26 +62,26 @@ export default function App() {
   const [connected, setConnected] = useState(false);
 
   const refreshTop = () =>
-    fetch("/api/top?n=5")
+    authedFetch("/api/top?n=5")
       .then((r) => r.json())
       .then((d) => setGroups(d.groups ?? []))
       .catch(() => {});
 
   const refreshPositions = () =>
-    fetch("/api/positions")
+    authedFetch("/api/positions")
       .then((r) => r.json())
       .then((d) => setPositions(d.positions ?? []))
       .catch(() => {});
 
   const openPosition = async (c: Candidate) => {
     const idx = c.u_idx ?? 0;
-    const r = await fetch(`/api/positions/open/${c.underlying}/${idx}`, { method: "POST" });
+    const r = await authedFetch(`/api/positions/open/${c.underlying}/${idx}`, { method: "POST" });
     if (!r.ok) throw new Error("open failed");
     await refreshPositions();
   };
 
   const closePosition = async (id: string, exitCredit: number) => {
-    const r = await fetch(`/api/positions/${id}/close`, {
+    const r = await authedFetch(`/api/positions/${id}/close`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ exit_credit: exitCredit }),
@@ -89,9 +93,11 @@ export default function App() {
   useEffect(() => {
     let ws: WebSocket;
     let closed = false;
-    const connect = () => {
+    const connect = async () => {
       const proto = location.protocol === "https:" ? "wss" : "ws";
-      ws = new WebSocket(`${proto}://${location.host}/ws`);
+      const token = await currentIdToken();
+      const q = token ? `?token=${encodeURIComponent(token)}` : "";
+      ws = new WebSocket(`${proto}://${location.host}/ws${q}`);
       ws.onopen = () => {
         setConnected(true);
         refreshTop();
@@ -126,12 +132,12 @@ export default function App() {
       return;
     }
     const idx = current.u_idx ?? 0;
-    fetch(`/api/payoff/${current.underlying}/${idx}`)
+    authedFetch(`/api/payoff/${current.underlying}/${idx}`)
       .then((r) => r.json())
       .then((d) => setPayoff(d.points ?? []))
       .catch(() => setPayoff([]));
     setReview(null);
-    fetch(`/api/review/${current.underlying}/${idx}`)
+    authedFetch(`/api/review/${current.underlying}/${idx}`)
       .then((r) => r.json())
       .then((d) => setReview(d))
       .catch(() => setReview(null));
@@ -153,7 +159,10 @@ export default function App() {
             </p>
           </div>
         </div>
-        <ConnectionBadge connected={connected} />
+        <div className="flex items-center gap-3.5">
+          {user && <SignedInBar user={user} />}
+          <ConnectionBadge connected={connected} />
+        </div>
       </header>
 
       <KpiStrip groups={groups} positions={positions} />

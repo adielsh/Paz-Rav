@@ -32,7 +32,7 @@ services:
 
   # The engine + dashboard, containerized. `docker compose up -d --build` brings up the
   # ENTIRE stack (DB + Redis + app) with one command — and this is the same image you'd
-  # push to ECR/App Runner/ECS later (README §8B).
+  # push to ECR/App Runner/ECS later (docs/DEPLOYMENT.md).
   app:
     build: .
     depends_on:
@@ -49,6 +49,11 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
+      ALLOWED_EMAIL: ${ALLOWED_EMAIL:-}
+      GMAIL_ADDRESS: ${GMAIL_ADDRESS:-}
+      GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD:-}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
     ports:
       - "8000:8000"
     healthcheck:

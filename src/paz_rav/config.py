@@ -39,6 +39,25 @@ class Settings(BaseSettings):
     # needs `docker compose up -d` running first).
     paz_persist: str = "memory"
 
+    # ---- auth (public deployment) ----
+    # Firebase Google Sign-In verification. Empty allowed_email -> auth is OFF (local/dev
+    # default: don't lock the user out of their own app). Set both to gate the app behind
+    # Google Sign-In when exposed publicly. allowed_email is also the owner: any OTHER
+    # email that signs in goes through the access_requests approval flow instead of
+    # being let in directly.
+    firebase_project_id: str = ""
+    allowed_email: str = ""
+
+    # ---- access-request notifications (optional; only needed for the approval flow) ----
+    # Gmail SMTP + an App Password (not your real password) — free, no new external
+    # service. Empty gmail_app_password -> notifications are skipped (the request is
+    # still recorded; you'd just need to check the pending list some other way).
+    gmail_address: str = ""
+    gmail_app_password: str = ""
+    # Base URL the approval email links to, e.g. https://random-words.trycloudflare.com
+    # (a Cloudflare Quick Tunnel URL changes on restart — update this when it does).
+    public_base_url: str = ""
+
     # ---- strategy tuning (override via env, e.g. PAZ_DACS_MIN_FAST_RATIO=0.15) ----
     # Volatility risk premium: options are priced ~15% above what realizes, which is the
     # documented edge premium-sellers harvest. Set 0 to price at fair value.
