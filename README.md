@@ -435,11 +435,24 @@ UNDERLYINGS=SPY uvicorn paz_rav.api.app:app --port 8000
   - ✅ FastAPI + WebSocket API and a **live React dashboard** (market overview, ranked
     candidates, payoff inspector) — verified running on real data.
   - **38 tests; whole engine runs end-to-end, no AI yet.**
-- **Phase 2 — Two-agent judgment:** Analyst + Critic via LangGraph, traced in Langfuse; advisory
-  alerts.
-- **Phase 3 — Exit + learning loop:** mechanical exit manager, paper trading, outcome → Langfuse
-  scoring, case memory.
+- **Phase 2 — Two-agent judgment:** ✅ Analyst + Critic via LangGraph (the loop is real — a
+  severe Critic objection sends a "take" back to the Analyst, who downgrades it), traced in
+  Langfuse, explanations via Claude. All three verified live against real API keys.
+- **Phase 3 — Exit + learning loop:**
+  - ✅ **Position** domain object (a candidate that was actually opened), in-memory paper
+    ledger, `POST /api/positions/open/{u}/{idx}` + `GET /api/positions` (live unrealized P&L).
+  - ✅ **Exit Manager** — deterministic per-strategy rules (condor: 50%-profit-target /
+    21-DTE time-stop / short-strike breach; DACS: stop at short_strike+offset / ~3x-debit
+    profit-target / 2-weeks-before-expiry), swept every scan cycle.
+  - ✅ **Closed loop** — realized P&L scores back onto the exact Langfuse trace the opening
+    decision produced (`create_score(trace_id=...)`), verified live end-to-end.
+  - ⏳ Not yet built: a dashboard panel for open positions (API-only right now), a
+    Redis/Postgres-backed position ledger (in-memory only so far), and case-memory (RAG-lite)
+    — deferred since there isn't a body of real outcomes to retrieve against yet.
 - **Phase 4 — Hardening / optional live:** risk kill-switch, optional broker behind hard limits.
+  IBKR adapter stubbed (`adapters/ibkr.py`); intentionally not wired yet — this phase's
+  observation stage doesn't execute trades, so yfinance's delayed data is sufficient until
+  either manual order placement or the Exit Manager needs true real-time watching.
 
 ## 11. How we know it works
 1. **Deterministic parity** — greeks / IV within tolerance vs. a vendor snapshot.

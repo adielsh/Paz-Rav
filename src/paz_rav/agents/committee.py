@@ -34,4 +34,5 @@ async def review(c: Candidate, feature: Feature | None) -> dict:
         "objection": critic_objection(c, feature),  # critic's bear case
         "explanation": await explain(c),          # plain-language summary
         "engine": "sequential",
+        "langfuse_trace_id": None,                # no tracing on the fallback path
     }

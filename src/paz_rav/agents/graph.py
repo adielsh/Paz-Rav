@@ -83,35 +83,47 @@ def available() -> bool:
 
 
 def run(candidate: Candidate, feature: Feature | None) -> dict:
-    """Run the committee graph; returns verdict/rationale/objection (+ revisions)."""
+    """Run the committee graph; returns verdict/rationale/objection (+ revisions).
+
+    ``langfuse_trace_id`` is included whenever tracing is configured — callers that open
+    a real Position pass it through so the eventual realized P&L (README's closed loop,
+    see positions/exit_manager.py) scores back onto this exact decision.
+    """
     global _graph
     if _graph is None:
         _graph = _build_graph()
-    _maybe_trace(candidate)
+    trace_id = _maybe_trace(candidate)
     out = _graph.invoke({"candidate": candidate, "feature": feature, "revisions": 0})
     return {
         "verdict": out["verdict"],
         "rationale": out["rationale"],
         "objection": out["objection"],
         "revisions": out.get("revisions", 0),
+        "langfuse_trace_id": trace_id,
     }
 
 
-def _maybe_trace(candidate: Candidate) -> None:
-    """Best-effort Langfuse event; silently skipped when unconfigured."""
+def _maybe_trace(candidate: Candidate) -> str | None:
+    """Best-effort Langfuse event; returns the trace id (for later outcome scoring), or
+    None when Langfuse isn't configured or the call fails — silently skipped either way.
+    """
     from paz_rav.config import get_settings
 
     s = get_settings()
     if not (s.langfuse_public_key and s.langfuse_secret_key):
-        return
+        return None
     try:
         from langfuse import Langfuse
 
-        Langfuse(public_key=s.langfuse_public_key, secret_key=s.langfuse_secret_key,
-                 host=s.langfuse_host).create_event(
+        client = Langfuse(public_key=s.langfuse_public_key, secret_key=s.langfuse_secret_key,
+                          host=s.langfuse_host)
+        trace_id = client.create_trace_id()
+        client.create_event(
+            trace_context={"trace_id": trace_id},
             name="committee_review",
             metadata={"underlying": candidate.underlying, "strategy": candidate.strategy,
                       "score": candidate.score},
         )
+        return trace_id
     except Exception:
-        pass
+        return None

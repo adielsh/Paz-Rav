@@ -12,7 +12,7 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import AsyncIterator
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -25,13 +25,15 @@ from paz_rav.bus import CH_CANDIDATES, CH_FEATURES, InMemoryBus
 from paz_rav.quant.valuation import structure_pnl
 from paz_rav.config import get_settings
 from paz_rav.pipeline import Pipeline
+from paz_rav.positions import InMemoryPositionRepository, Position
+from paz_rav.positions.exit_rules import mark_to_market
 from paz_rav.scheduler import Scheduler
 from paz_rav.store.memory import (
     InMemoryCandidateRepository,
     InMemoryFeatureStore,
     InMemoryIVHistory,
 )
-from paz_rav.store.serialize import candidate_to_dict
+from paz_rav.store.serialize import _leg_to_dict, candidate_to_dict
 from paz_rav.strategies import FOCUS_STRATEGIES, BuildConfig, list_strategies
 
 log = logging.getLogger("paz_rav.api")
@@ -91,8 +93,11 @@ def create_app(
     iv_history = InMemoryIVHistory()
     candidate_repo = InMemoryCandidateRepository()
     bus = InMemoryBus()
+    # Positions (paper, Phase 3) stay in-memory for now regardless of PAZ_PERSIST — a
+    # Redis/Postgres-backed ledger is the natural next step once this MVP is proven.
+    position_repo = InMemoryPositionRepository()
     pipeline = Pipeline(feed, feature_store, iv_history, candidate_repo, bus, config,
-                        strategies=FOCUS_STRATEGIES)
+                        strategies=FOCUS_STRATEGIES, position_repo=position_repo)
     scheduler = Scheduler(pipeline, underlyings, interval=interval, today=today)
 
     @contextlib.asynccontextmanager
@@ -101,7 +106,7 @@ def create_app(
         if settings.paz_persist == "redis_postgres":
             feature_store, iv_history, bus, candidate_repo = await _build_real_stores(settings)
             pipeline = Pipeline(feed, feature_store, iv_history, candidate_repo, bus, config,
-                                strategies=FOCUS_STRATEGIES)
+                                strategies=FOCUS_STRATEGIES, position_repo=position_repo)
             scheduler = Scheduler(pipeline, underlyings, interval=interval, today=today)
         if initial_scan:
             await scheduler.scan_all()          # populate before serving
@@ -219,6 +224,52 @@ def create_app(
                    if eval_date else pnl_at_expiry(c, s))
             points.append({"price": round(s, 2), "pnl": round(pnl, 2)})
         return {"underlying": underlying, "strikes": strikes, "points": points}
+
+    def _position_to_dict(pos: Position, spot: float | None = None) -> dict:
+        d = {
+            "id": pos.id, "underlying": pos.underlying, "strategy": pos.strategy,
+            "legs": [_leg_to_dict(leg) for leg in pos.legs],
+            "entry_credit": pos.entry_credit, "opened_at": pos.opened_at.isoformat(),
+            "status": pos.status, "close_reason": pos.close_reason,
+            "closed_at": pos.closed_at.isoformat() if pos.closed_at else None,
+            "realized_pnl": pos.realized_pnl, "meta": pos.meta,
+            "langfuse_trace_id": pos.langfuse_trace_id,
+        }
+        if pos.status == "open" and spot is not None:
+            d["unrealized_pnl"] = round(mark_to_market(pos, spot, today or date.today()), 4)
+        return d
+
+    @app.post("/api/positions/open/{underlying}/{idx}")
+    async def api_open_position(underlying: str, idx: int) -> dict:
+        """Open a PAPER position from a recommended candidate (README Phase 3).
+
+        Runs the committee first so the position carries a Langfuse trace id — when it
+        later closes, the realized P&L scores back onto this exact decision.
+        """
+        from paz_rav.agents import review
+
+        cands = await candidate_repo.latest(underlying, config.top_n)
+        if idx < 0 or idx >= len(cands):
+            return {"error": "no such candidate"}
+        candidate = cands[idx]
+        feature = await feature_store.get(underlying)
+        result = await review(candidate, feature)
+        pos = Position.open_from(candidate, datetime.now(timezone.utc),
+                                 langfuse_trace_id=result.get("langfuse_trace_id"))
+        await position_repo.save(pos)
+        return _position_to_dict(pos)
+
+    @app.get("/api/positions")
+    async def api_positions() -> dict:
+        rows = await position_repo.list_all()
+        out = []
+        for pos in rows:
+            spot = None
+            if pos.status == "open":
+                f = await feature_store.get(pos.underlying)
+                spot = f.spot if f else None
+            out.append(_position_to_dict(pos, spot))
+        return {"positions": out}
 
     @app.websocket("/ws")
     async def ws(websocket: WebSocket) -> None:

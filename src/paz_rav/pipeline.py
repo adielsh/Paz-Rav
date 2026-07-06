@@ -16,6 +16,8 @@ from paz_rav.analytics import analyze
 from paz_rav.builder import build
 from paz_rav.bus import CH_CANDIDATES, CH_FEATURES
 from paz_rav.contracts import Feature
+from paz_rav.positions.base import Position
+from paz_rav.positions.exit_manager import sweep as sweep_exits
 from paz_rav.store.serialize import candidate_to_dict
 from paz_rav.strategies import BuildConfig, Candidate, MarketContext
 
@@ -24,13 +26,15 @@ from paz_rav.strategies import BuildConfig, Candidate, MarketContext
 class ScanResult:
     feature: Feature
     candidates: list[Candidate]
+    closed_positions: list[Position] | None = None   # set when position_repo is configured
 
 
 class Pipeline:
     """Holds the wiring; ``run_once`` executes one full deterministic scan."""
 
     def __init__(self, md, feature_store, iv_history, candidate_repo, bus,
-                 config: BuildConfig | None = None, strategies: list[str] | None = None):
+                 config: BuildConfig | None = None, strategies: list[str] | None = None,
+                 position_repo=None):
         self.md = md
         self.feature_store = feature_store
         self.iv_history = iv_history
@@ -38,6 +42,7 @@ class Pipeline:
         self.bus = bus
         self.config = config or BuildConfig()
         self.strategies = strategies   # None => all registered
+        self.position_repo = position_repo   # None => Phase-3 exit sweep skipped
 
     async def run_once(self, underlying: str, *, today: date | None = None) -> ScanResult | None:
         today = today or date.today()
@@ -96,4 +101,8 @@ class Pipeline:
             "candidates": [candidate_to_dict(c) for c in candidates],
         })
 
-        return ScanResult(feature=result.feature, candidates=candidates)
+        closed = None
+        if self.position_repo is not None:
+            closed = await sweep_exits(self.position_repo, underlying, spot, today)
+
+        return ScanResult(feature=result.feature, candidates=candidates, closed_positions=closed)

@@ -64,3 +64,17 @@ def test_top_excludes_pass_verdicts():
         for g in r["groups"]:
             for t in g["trades"]:
                 assert t["verdict"] != "pass"  # committee-rejected trades never surface here
+
+
+def test_open_position_and_list(monkeypatch):
+    with make_client() as c:
+        opened = c.post("/api/positions/open/SPY/0").json()
+        assert opened["status"] == "open"
+        assert opened["underlying"] == "SPY"
+        assert "id" in opened
+
+        rows = c.get("/api/positions").json()["positions"]
+        assert any(p["id"] == opened["id"] for p in rows)
+        mine = next(p for p in rows if p["id"] == opened["id"])
+        assert mine["status"] == "open"
+        assert "unrealized_pnl" in mine   # live mark-to-market for an open position
