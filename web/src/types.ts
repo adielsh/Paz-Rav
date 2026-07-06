@@ -59,8 +59,10 @@ export interface Position {
   entry_credit: number;
   opened_at: string;
   status: "open" | "closed";
+  alert: CloseReason | null;
   close_reason: CloseReason | null;
   closed_at: string | null;
+  exit_credit: number | null;
   realized_pnl: number | null;
   unrealized_pnl?: number;
   meta?: Record<string, number | string>;

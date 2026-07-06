@@ -235,8 +235,9 @@ def create_app(
             "id": pos.id, "underlying": pos.underlying, "strategy": pos.strategy,
             "legs": [_leg_to_dict(leg) for leg in pos.legs],
             "entry_credit": pos.entry_credit, "opened_at": pos.opened_at.isoformat(),
-            "status": pos.status, "close_reason": pos.close_reason,
+            "status": pos.status, "alert": pos.alert, "close_reason": pos.close_reason,
             "closed_at": pos.closed_at.isoformat() if pos.closed_at else None,
+            "exit_credit": pos.exit_credit,
             "realized_pnl": pos.realized_pnl, "meta": pos.meta,
             "langfuse_trace_id": pos.langfuse_trace_id,
         }
@@ -275,6 +276,23 @@ def create_app(
                 spot = f.spot if f else None
             out.append(_position_to_dict(pos, spot))
         return {"positions": out}
+
+    @app.post("/api/positions/{position_id}/close")
+    async def api_close_position(position_id: str, body: dict) -> dict:
+        """Confirm you closed the position at your broker — records the REAL net price.
+
+        ``exit_credit``: what you got closing the whole position (positive = you
+        received money, negative = you paid money). This is the source of truth for
+        realized P&L — nothing here is modeled or guessed.
+        """
+        from paz_rav.positions import close_position
+
+        exit_credit = float(body.get("exit_credit", 0.0))
+        closed = await close_position(position_repo, position_id, exit_credit,
+                                      datetime.now(timezone.utc))
+        if closed is None:
+            return {"error": "position not found or already closed"}
+        return _position_to_dict(closed)
 
     @app.websocket("/ws")
     async def ws(websocket: WebSocket) -> None:

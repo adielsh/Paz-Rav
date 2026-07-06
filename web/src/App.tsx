@@ -38,6 +38,16 @@ export default function App() {
     await refreshPositions();
   };
 
+  const closePosition = async (id: string, exitCredit: number) => {
+    const r = await fetch(`/api/positions/${id}/close`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ exit_credit: exitCredit }),
+    });
+    if (!r.ok) throw new Error("close failed");
+    await refreshPositions();
+  };
+
   useEffect(() => {
     let ws: WebSocket;
     let closed = false;
@@ -142,7 +152,7 @@ export default function App() {
       </div>
 
       <section className="mt-5">
-        <Positions positions={positions} />
+        <Positions positions={positions} onClose={closePosition} />
       </section>
 
       <section className="mt-5">

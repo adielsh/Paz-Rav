@@ -11,7 +11,7 @@ from datetime import date, datetime, timezone
 import pytest
 
 from paz_rav.positions import ExitConfig, InMemoryPositionRepository, Position, check_exit
-from paz_rav.positions.exit_manager import sweep
+from paz_rav.positions.exit_manager import close_position, sweep
 from paz_rav.strategies import make_strategy
 
 TODAY = date(2026, 1, 15)
@@ -119,38 +119,98 @@ def test_dacs_time_stop_two_weeks_before_expiry():
     assert should_close and reason == "time_stop"   # 35-22=13 <= 14
 
 
-# ---- Exit manager sweep (end-to-end with the repository) ----
+# ---- Exit manager sweep: advisory only, NEVER closes by itself ----
 
-def test_sweep_closes_and_scores_positions():
+def test_sweep_flags_but_does_not_close():
     async def go():
         repo = InMemoryPositionRepository()
         c = condor(dte=35)
         pos = Position.open_from(c, datetime(2026, 1, 15, tzinfo=timezone.utc))
         await repo.save(pos)
 
-        # breach the short call -> should close with stop_loss and a real realized pnl
-        closed = await sweep(repo, "SPX", spot=6250.0, today=TODAY)
-        assert len(closed) == 1
-        assert closed[0].status == "closed"
-        assert closed[0].close_reason == "stop_loss"
-        assert closed[0].realized_pnl is not None
+        # breach the short call -> flagged with stop_loss, but STILL OPEN
+        newly_flagged = await sweep(repo, "SPX", spot=6250.0, today=TODAY)
+        assert len(newly_flagged) == 1
+        assert newly_flagged[0].alert == "stop_loss"
+        assert newly_flagged[0].status == "open"          # never auto-closed
+        assert newly_flagged[0].realized_pnl is None
 
-        # no longer open afterwards
-        assert await repo.list_open("SPX") == []
-        all_rows = await repo.list_all("SPX")
-        assert len(all_rows) == 1 and all_rows[0].status == "closed"
+        still_open = await repo.list_open("SPX")
+        assert len(still_open) == 1 and still_open[0].alert == "stop_loss"
 
     asyncio.run(go())
 
 
-def test_sweep_leaves_healthy_positions_open():
+def test_sweep_leaves_healthy_positions_unflagged():
     async def go():
         repo = InMemoryPositionRepository()
         c = condor(dte=35)
         pos = Position.open_from(c, datetime(2026, 1, 15, tzinfo=timezone.utc))
         await repo.save(pos)
-        closed = await sweep(repo, "SPX", spot=6000.0, today=TODAY)
-        assert closed == []
-        assert len(await repo.list_open("SPX")) == 1
+        newly_flagged = await sweep(repo, "SPX", spot=6000.0, today=TODAY)
+        assert newly_flagged == []
+        rows = await repo.list_open("SPX")
+        assert len(rows) == 1 and rows[0].alert is None
+
+    asyncio.run(go())
+
+
+def test_sweep_clears_a_stale_alert():
+    async def go():
+        repo = InMemoryPositionRepository()
+        c = condor(dte=35)
+        pos = Position.open_from(c, datetime(2026, 1, 15, tzinfo=timezone.utc))
+        await repo.save(pos)
+        await sweep(repo, "SPX", spot=6250.0, today=TODAY)         # flags stop_loss
+        assert (await repo.get(pos.id)).alert == "stop_loss"
+
+        await sweep(repo, "SPX", spot=6000.0, today=TODAY)         # price recovers
+        assert (await repo.get(pos.id)).alert is None              # alert cleared
+        assert (await repo.get(pos.id)).status == "open"           # still open throughout
+
+    asyncio.run(go())
+
+
+# ---- Manual close: the REAL price the user confirms ----
+
+def test_close_position_records_real_price_not_a_model():
+    async def go():
+        repo = InMemoryPositionRepository()
+        c = condor(dte=35)
+        pos = Position.open_from(c, datetime(2026, 1, 15, tzinfo=timezone.utc))
+        await repo.save(pos)
+
+        # user reports: I closed it and paid 5.00 net to close (a debit to close)
+        closed = await close_position(repo, pos.id, exit_credit=-5.00,
+                                      closed_at=datetime(2026, 1, 20, tzinfo=timezone.utc))
+        assert closed is not None
+        assert closed.status == "closed"
+        assert closed.exit_credit == -5.00
+        assert closed.realized_pnl == round(pos.entry_credit - 5.00, 4)
+        assert closed.close_reason == "manual"   # no alert was active
+
+    asyncio.run(go())
+
+
+def test_close_position_uses_active_alert_as_reason():
+    async def go():
+        repo = InMemoryPositionRepository()
+        c = condor(dte=35)
+        pos = Position.open_from(c, datetime(2026, 1, 15, tzinfo=timezone.utc))
+        await repo.save(pos)
+        await sweep(repo, "SPX", spot=6250.0, today=TODAY)   # flags stop_loss
+
+        closed = await close_position(repo, pos.id, exit_credit=-3.50,
+                                      closed_at=datetime(2026, 1, 20, tzinfo=timezone.utc))
+        assert closed.close_reason == "stop_loss"   # inherited from the active alert
+
+    asyncio.run(go())
+
+
+def test_close_position_missing_or_already_closed_returns_none():
+    async def go():
+        repo = InMemoryPositionRepository()
+        missing = await close_position(repo, "no-such-id", 1.0, datetime.now(timezone.utc))
+        assert missing is None
 
     asyncio.run(go())

@@ -1,42 +1,55 @@
-"""Exit manager — watches open positions and closes them per the deterministic rules.
+"""Exit manager — watches open positions and flags the ones you should close.
 
-This is the piece that closes the learning loop (README §6, §10 Phase 3): when a
-position closes, its realized P&L is scored back onto the exact Langfuse trace the
-original committee decision produced — so you can later ask which regimes/verdicts
-actually made money.
+Honest design: this never closes a position by itself. The real fill happens at your
+broker, not inside this system, so the sweep only sets ``alert`` — a clear "close this
+now" signal shown on the dashboard. You confirm the actual close (and the real price you
+got) via ``close_position``, which is what closes the learning loop: the realized P&L
+scores back onto the exact Langfuse trace the opening decision produced.
 """
 
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 
 from paz_rav.positions.base import Position, PositionRepository
-from paz_rav.positions.exit_rules import ExitConfig, check_exit, mark_to_market
+from paz_rav.positions.exit_rules import ExitConfig, check_exit
 
 
 async def sweep(
     repo: PositionRepository, underlying: str, spot: float, today: date,
     cfg: ExitConfig | None = None,
 ) -> list[Position]:
-    """Check every open position for ``underlying``; close any that trigger an exit rule.
+    """Re-check every open position for ``underlying``; update its ``alert``.
 
-    Returns the positions closed this sweep (empty if none triggered).
+    Returns the positions whose alert just turned on this sweep (newly flagged), so
+    callers can notify. A position whose trigger condition is no longer true (e.g. price
+    moved back) has its alert cleared automatically.
     """
     cfg = cfg or ExitConfig()
-    closed: list[Position] = []
+    newly_flagged: list[Position] = []
     for pos in await repo.list_open(underlying):
         should_close, reason = check_exit(pos, spot, today, cfg)
-        if not should_close:
-            continue
-        realized = mark_to_market(pos, spot, today, cfg.r)
-        closed_pos = replace(
-            pos, status="closed", close_reason=reason,
-            closed_at=datetime.now(timezone.utc), realized_pnl=round(realized, 4),
-        )
-        await repo.save(closed_pos)
-        _maybe_score(closed_pos)
-        closed.append(closed_pos)
+        new_alert = reason if should_close else None
+        if new_alert != pos.alert:
+            updated = replace(pos, alert=new_alert)
+            await repo.save(updated)
+            if new_alert is not None:
+                newly_flagged.append(updated)
+    return newly_flagged
+
+
+async def close_position(
+    repo: PositionRepository, position_id: str, exit_credit: float,
+    closed_at: datetime, reason: str | None = None,
+) -> Position | None:
+    """Record the real close the user confirms, and score the outcome back to Langfuse."""
+    pos = await repo.get(position_id)
+    if pos is None or pos.status != "open":
+        return None
+    closed = pos.close_manually(exit_credit, closed_at, reason=reason)  # type: ignore[arg-type]
+    await repo.save(closed)
+    _maybe_score(closed)
     return closed
 
 

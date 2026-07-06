@@ -26,7 +26,7 @@ from paz_rav.strategies import BuildConfig, Candidate, MarketContext
 class ScanResult:
     feature: Feature
     candidates: list[Candidate]
-    closed_positions: list[Position] | None = None   # set when position_repo is configured
+    flagged_positions: list[Position] | None = None   # newly alerted this scan (advisory)
 
 
 class Pipeline:
@@ -101,8 +101,8 @@ class Pipeline:
             "candidates": [candidate_to_dict(c) for c in candidates],
         })
 
-        closed = None
+        flagged = None
         if self.position_repo is not None:
-            closed = await sweep_exits(self.position_repo, underlying, spot, today)
+            flagged = await sweep_exits(self.position_repo, underlying, spot, today)
 
-        return ScanResult(feature=result.feature, candidates=candidates, closed_positions=closed)
+        return ScanResult(feature=result.feature, candidates=candidates, flagged_positions=flagged)

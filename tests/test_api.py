@@ -88,3 +88,17 @@ def test_open_position_and_list(monkeypatch):
         mine = next(p for p in rows if p["id"] == opened["id"])
         assert mine["status"] == "open"
         assert "unrealized_pnl" in mine   # live mark-to-market for an open position
+
+
+def test_manual_close_records_real_price():
+    with make_client() as c:
+        opened = c.post("/api/positions/open/SPY/0").json()
+        closed = c.post(f"/api/positions/{opened['id']}/close",
+                        json={"exit_credit": -1.5}).json()
+        assert closed["status"] == "closed"
+        assert closed["exit_credit"] == -1.5
+        assert closed["realized_pnl"] == round(opened["entry_credit"] - 1.5, 4)
+
+        rows = c.get("/api/positions").json()["positions"]
+        mine = next(p for p in rows if p["id"] == opened["id"])
+        assert mine["status"] == "closed"

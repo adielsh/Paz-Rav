@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Candidate } from "../types";
-import { frontExpiry, num, shortStrikes, strategyColor, strategyLabel } from "../lib";
+import { frontExpiry, num, strategyColor, strategyLabel } from "../lib";
+import LegLadder from "./LegLadder";
 
 const VERDICT: Record<string, { label: string; color: string }> = {
   take: { label: "לפתוח", color: "#4fb187" },
@@ -8,22 +9,11 @@ const VERDICT: Record<string, { label: string; color: string }> = {
   pass: { label: "לוותר", color: "#e06e60" },
 };
 
-function Metric({ label, value, tone }: { label: string; value: string; tone?: string }) {
-  return (
-    <div className="flex flex-col">
-      <span className="text-[9px] uppercase tracking-wider text-slate-500 font-mono">{label}</span>
-      <span className="text-sm font-mono tabular-nums" style={{ color: tone }}>
-        {value}
-      </span>
-    </div>
-  );
-}
-
 function OpenButton({ onOpen }: { onOpen: () => Promise<void> }) {
   const [state, setState] = useState<"idle" | "opening" | "opened" | "error">("idle");
 
   const click = async (e: React.MouseEvent) => {
-    e.stopPropagation();   // don't also trigger the card's select-for-details click
+    e.stopPropagation();
     if (state !== "idle") return;
     setState("opening");
     try {
@@ -34,18 +24,33 @@ function OpenButton({ onOpen }: { onOpen: () => Promise<void> }) {
     }
   };
 
-  const label = { idle: "פתח פוזיציה", opening: "פותח…", opened: "נפתחה ✓", error: "שגיאה" }[state];
+  const label = { idle: "פתח פוזיציה", opening: "פותח…", opened: "נפתחה ✓", error: "שגיאה, נסה שוב" }[state];
   const tone = { idle: "#4fb187", opening: "#8a94a1", opened: "#4fb187", error: "#e06e60" }[state];
 
   return (
     <button
       onClick={click}
-      disabled={state !== "idle"}
-      className="text-[11px] font-mono px-2.5 py-1 rounded-full border transition disabled:cursor-default"
-      style={{ borderColor: `${tone}55`, color: tone, background: `${tone}15` }}
+      disabled={state === "opening" || state === "opened"}
+      className="shrink-0 text-[12px] font-mono font-semibold px-3 py-1.5 rounded-lg border transition disabled:cursor-default"
+      style={{ borderColor: `${tone}66`, color: tone, background: `${tone}18` }}
     >
       {label}
     </button>
+  );
+}
+
+/** One clean metrics line — a few key numbers separated by a middot, not a boxy grid. */
+function MetricLine({ items }: { items: [string, string, string?][] }) {
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-2 text-[13px] font-mono">
+      {items.map(([label, value, tone], i) => (
+        <span key={label} className="flex items-baseline gap-1">
+          {i > 0 && <span className="text-slate-600 mx-1">·</span>}
+          <span className="text-slate-500">{label}</span>
+          <span className="font-semibold" style={{ color: tone }}>{value}</span>
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -76,9 +81,9 @@ export default function Suggestions({
               active ? "border-accent bg-panel" : "border-line bg-panel/50 hover:border-slate-500"
             }`}
           >
-            <div className="flex items-center gap-3">
-              <span className="text-slate-500 font-mono text-sm w-5">{i + 1}</span>
-              <span className="font-mono font-semibold text-base w-16">{c.underlying}</span>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-slate-500 font-mono text-sm">{i + 1}</span>
+              <span className="font-mono font-bold text-lg">{c.underlying}</span>
               <span
                 className="text-xs font-mono px-2 py-0.5 rounded-full"
                 style={{ background: `${strategyColor(c.strategy)}22`, color: strategyColor(c.strategy) }}
@@ -87,40 +92,35 @@ export default function Suggestions({
               </span>
               {c.verdict && (
                 <span
-                  className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
-                  style={{ background: `${VERDICT[c.verdict].color}22`, color: VERDICT[c.verdict].color }}
+                  className="text-[11px] font-bold px-2 py-0.5 rounded-full"
+                  style={{ background: VERDICT[c.verdict].color, color: "#0c111a" }}
                 >
                   {VERDICT[c.verdict].label}
                 </span>
               )}
-              <span className="font-mono text-xs text-slate-400 ml-auto flex items-center gap-2">
-                <span className="text-slate-300">{dacs ? "sell 1mo · buy 2mo" : `short ${shortStrikes(c)}`}</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/5">⏱ {frontExpiry(c)}</span>
-              </span>
+              <span className="text-[11px] font-mono text-slate-400 ml-auto">⏱ {frontExpiry(c)}</span>
             </div>
 
-            <div className="mt-3 flex items-end gap-3 pl-8">
-              <div className="grid grid-cols-4 gap-3 flex-1">
-                {dacs ? (
-                  <>
-                    <Metric label="short call" value={String(shortStrikes(c))} />
-                    <Metric
-                      label="fast ratio"
-                      value={`${((num(c.meta, "fast_ratio") ?? 0) * 100).toFixed(0)}%`}
-                      tone="#4fb187"
-                    />
-                    <Metric label="stop" value={String(num(c.meta, "stop_conservative") ?? "—")} tone="#e06e60" />
-                    <Metric label="OTM" value={`${num(c.meta, "otm_pct") ?? "—"}%`} />
-                  </>
-                ) : (
-                  <>
-                    <Metric label="POP" value={`${(c.pop * 100).toFixed(0)}%`} />
-                    <Metric label="credit" value={c.credit.toFixed(2)} tone="#4fb187" />
-                    <Metric label="max loss" value={c.max_loss.toFixed(2)} tone="#e06e60" />
-                    <Metric label="width" value={c.width.toFixed(0)} />
-                  </>
-                )}
-              </div>
+            <LegLadder legs={c.legs} />
+
+            <div className="flex items-center justify-between mt-3 gap-3">
+              {dacs ? (
+                <MetricLine
+                  items={[
+                    ["Fast Ratio", `${((num(c.meta, "fast_ratio") ?? 0) * 100).toFixed(0)}%`, "#4fb187"],
+                    ["סטופ", String(num(c.meta, "stop_conservative") ?? "—"), "#e06e60"],
+                    ["OTM", `${num(c.meta, "otm_pct") ?? "—"}%`],
+                  ]}
+                />
+              ) : (
+                <MetricLine
+                  items={[
+                    ["סיכוי", `${(c.pop * 100).toFixed(0)}%`],
+                    ["קרדיט", `+${c.credit.toFixed(2)}`, "#4fb187"],
+                    ["הפסד מקס", `-${c.max_loss.toFixed(2)}`, "#e06e60"],
+                  ]}
+                />
+              )}
               <OpenButton onOpen={() => onOpenPosition(c)} />
             </div>
           </div>

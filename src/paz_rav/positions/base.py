@@ -1,8 +1,10 @@
 """Position — a candidate that was actually opened (paper or later, live).
 
 This is the missing link between "here's a recommendation" and "I decided to trade it."
-A Position starts open, carries the exact legs/credit it was opened at, and is later
-closed by the Exit Manager (or manually) with a reason and a realized P&L.
+A Position starts open. The Exit Manager never closes it by itself — the real fill
+happens at your broker, not inside this system — it only sets ``alert`` to say "you
+should close this now" (README's honest design: advisory, not execution). Closing is
+always a deliberate user action that records the real net price you got.
 """
 
 from __future__ import annotations
@@ -27,8 +29,10 @@ class Position:
     opened_at: datetime
     langfuse_trace_id: str | None = None
     status: Literal["open", "closed"] = "open"
+    alert: CloseReason | None = None   # set by the Exit Manager sweep; advisory only
     close_reason: CloseReason | None = None
     closed_at: datetime | None = None
+    exit_credit: float | None = None   # the REAL net price you got closing (your input)
     realized_pnl: float | None = None
     meta: dict = field(default_factory=dict)
 
@@ -45,6 +49,20 @@ class Position:
             id=str(uuid4()), underlying=candidate.underlying, strategy=candidate.strategy,
             legs=candidate.legs, entry_credit=candidate.credit, opened_at=opened_at,
             langfuse_trace_id=langfuse_trace_id, meta=meta,
+        )
+
+    def close_manually(self, exit_credit: float, closed_at: datetime,
+                       reason: CloseReason | None = None) -> "Position":
+        """Record the REAL close: ``exit_credit`` is the net price you actually got
+        closing the whole position (positive = you received money, negative = you paid
+        money). Realized P&L is your entry credit plus that — no modeling involved.
+        """
+        from dataclasses import replace
+
+        return replace(
+            self, status="closed", alert=None, close_reason=reason or self.alert or "manual",
+            closed_at=closed_at, exit_credit=exit_credit,
+            realized_pnl=round(self.entry_credit + exit_credit, 4),
         )
 
 
