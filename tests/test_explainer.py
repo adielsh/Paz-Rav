@@ -1,4 +1,8 @@
-"""Explainer agent — deterministic template fallback (no API key needed)."""
+"""Explainer agent — deterministic template fallback (no API key / no network needed).
+
+Hermetic via the autouse fixture in conftest.py, which forces an empty ANTHROPIC_API_KEY
+regardless of what a real local .env file might contain.
+"""
 
 import asyncio
 
