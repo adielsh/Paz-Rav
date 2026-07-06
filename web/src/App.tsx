@@ -3,6 +3,8 @@ import Suggestions from "./components/Suggestions";
 import TradeDetails from "./components/TradeDetails";
 import DacsGuide from "./components/DacsGuide";
 import Positions from "./components/Positions";
+import AmbientBackground from "./components/AmbientBackground";
+import KpiStrip from "./components/KpiStrip";
 import { strategyColor, strategyLabel } from "./lib";
 import type { Candidate, PayoffPoint, Position, Review } from "./types";
 
@@ -15,12 +17,15 @@ function Logo() {
   // A one-off decorative gradient (lighter/darker variants of the brand gold) — not a
   // reusable semantic token, so it's not in theme.ts.
   return (
-    <div
-      className="w-9 h-9 rounded-xl grid place-items-center font-mono font-bold text-[15px] shadow-elevated shrink-0"
-      style={{ background: "linear-gradient(155deg, #E8C179, #B4863B)", color: "#1A1206" }}
-      aria-hidden="true"
-    >
-      P
+    <div className="relative shrink-0">
+      <div className="absolute inset-0 rounded-xl bg-accent/40 blur-lg" aria-hidden="true" />
+      <div
+        className="relative w-10 h-10 rounded-xl grid place-items-center font-mono font-bold text-base shadow-elevated"
+        style={{ background: "linear-gradient(155deg, #E8C179, #B4863B)", color: "#1A1206" }}
+        aria-hidden="true"
+      >
+        P
+      </div>
     </div>
   );
 }
@@ -133,14 +138,15 @@ export default function App() {
   }, [current]);
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-7">
-      <header className="flex items-center justify-between gap-4 mb-6">
-        <div className="flex items-center gap-3">
+    <div className="relative max-w-7xl mx-auto px-4 sm:px-6 py-7">
+      <AmbientBackground />
+      <header className="flex items-center justify-between gap-4 mb-7">
+        <div className="flex items-center gap-3.5">
           <Logo />
           <div>
-            <h1 className="text-lg font-semibold tracking-tight leading-none">
+            <h1 className="text-xl font-bold tracking-tight leading-none">
               Paz Rav
-              <span className="text-ink-2 text-sm font-normal ml-2">best positions to open</span>
+              <span className="text-ink-2 text-sm font-normal ml-2.5">best positions to open</span>
             </h1>
             <p className="text-2xs uppercase tracking-wider text-ink-3 font-mono mt-1.5">
               Iron Condor · DACS 1.0 — top 5 each
@@ -149,6 +155,8 @@ export default function App() {
         </div>
         <ConnectionBadge connected={connected} />
       </header>
+
+      <KpiStrip groups={groups} positions={positions} />
 
       <div className="grid lg:grid-cols-[1.15fr_1fr] gap-5">
         <div className="space-y-6">
@@ -181,7 +189,14 @@ export default function App() {
           })}
         </div>
 
-        <section className="rounded-2xl border border-line bg-panel/70 p-5 lg:sticky lg:top-6 self-start">
+        <section
+          className="rounded-2xl border border-line bg-panel/70 p-5 lg:sticky lg:top-6 self-start"
+          style={
+            current
+              ? { boxShadow: `0 0 0 1px ${strategyColor(current.strategy)}22, 0 20px 50px -20px ${strategyColor(current.strategy)}33` }
+              : undefined
+          }
+        >
           <TradeDetails candidate={current} points={payoff} review={review} />
         </section>
       </div>

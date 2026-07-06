@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Position } from "../types";
 import { closeReasonLabel, strategyColor, strategyLabel } from "../lib";
+import { colors } from "../theme";
 import LegLadder from "./LegLadder";
 import { IconAlertTriangle, IconArrowDownCircle, IconArrowUpCircle, IconCheckCircle } from "./Icon";
 
@@ -134,13 +135,19 @@ function PositionCard({
   const [closing, setClosing] = useState(false);
   const isOpen = p.status === "open";
   const hasAlert = isOpen && !!p.alert;
+  const rail = hasAlert ? colors.bad : strategyColor(p.strategy);
 
   return (
     <div
-      className={`rounded-xl border p-4 ${
+      className={`relative overflow-hidden rounded-xl border pl-5 pr-4 py-4 ${
         hasAlert ? "border-bad/45 bg-bad/5" : isOpen ? "border-line bg-panel/60" : "border-line/60 bg-panel/25"
       }`}
     >
+      <span
+        className={`absolute inset-y-0 left-0 w-1 ${hasAlert ? "animate-pulse-soft" : ""}`}
+        style={{ background: rail }}
+        aria-hidden="true"
+      />
       <div className="flex items-center gap-2 mb-2.5">
         <span
           className={`w-2 h-2 rounded-full shrink-0 ${
