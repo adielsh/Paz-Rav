@@ -76,6 +76,11 @@ export default function TradeDetails({
             {VERDICT[review.verdict].label}
           </span>
           <span className="text-slate-200">{review.rationale}</span>
+          {review.engine === "langgraph" && (
+            <span className="block mt-1.5 text-[10px] font-mono text-slate-500">
+              ⚙ ועדת LangGraph{(review.revisions ?? 0) > 0 ? " · תוקן אחרי טיעון המבקר" : ""}
+            </span>
+          )}
         </div>
       )}
 

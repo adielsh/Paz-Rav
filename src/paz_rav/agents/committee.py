@@ -16,10 +16,22 @@ from paz_rav.strategies.base import Candidate
 
 
 async def review(c: Candidate, feature: Feature | None) -> dict:
+    """Run the committee. Uses the LangGraph Analyst<->Critic loop when available, else
+    a plain sequential pass. Either way the shape is identical to callers."""
+    from paz_rav.agents import graph
+
+    if graph.available():
+        try:
+            g = graph.run(c, feature)
+            return {**g, "explanation": await explain(c), "engine": "langgraph"}
+        except Exception:
+            pass
+
     verdict, rationale = analyst_review(c, feature)
     return {
         "verdict": verdict,                       # take | caution | pass
         "rationale": rationale,                   # analyst's reasoning
         "objection": critic_objection(c, feature),  # critic's bear case
         "explanation": await explain(c),          # plain-language summary
+        "engine": "sequential",
     }

@@ -44,5 +44,7 @@ export interface Review {
   rationale?: string;
   objection?: string;
   explanation?: string;
+  engine?: string;
+  revisions?: number;
   context?: { regime: string; iv_rank: number; rsi: number | null };
 }

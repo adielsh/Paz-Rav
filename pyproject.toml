@@ -19,8 +19,8 @@ dependencies = [
 quant = ["numpy>=1.26", "scipy>=1.11", "py_vollib>=1.0.1", "polars>=0.20", "pyarrow>=15", "duckdb>=0.10"]
 # Market-data feeds. yfinance = free/delayed (dev); ib_async = real-time via TWS (prod).
 feeds = ["yfinance>=0.2.40", "ib_async>=1.0"]
-# Phase 2 — the two-agent judgment layer.
-agents = ["anthropic>=0.25", "langgraph>=0.2", "langfuse>=2.0"]
+# Phase 2 — the two-agent judgment layer (Analyst<->Critic loop + tracing).
+agents = ["anthropic>=0.25", "langgraph>=0.2", "langfuse>=2.0"]  # optional: sequential fallback if absent
 dev = ["pytest>=8.0", "ruff>=0.4", "mypy>=1.9", "fakeredis>=2.20"]
 
 [build-system]
