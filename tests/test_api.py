@@ -55,3 +55,12 @@ def test_ws_sends_snapshot():
             msg = ws.receive_json()
             assert msg["type"] == "snapshot"
             assert "SPY" in msg["candidates"]
+
+
+def test_top_excludes_pass_verdicts():
+    with make_client() as c:
+        r = c.get("/api/top?n=5").json()
+        assert r["groups"], "expected at least one strategy group"
+        for g in r["groups"]:
+            for t in g["trades"]:
+                assert t["verdict"] != "pass"  # committee-rejected trades never surface here

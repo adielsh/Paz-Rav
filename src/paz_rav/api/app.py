@@ -149,9 +149,12 @@ def create_app(
     async def api_top(n: int = 5) -> dict:
         """The best ``n`` trades PER strategy, across all underlyings.
 
-        Returns one group per strategy (iron condor, DACS) so each is ranked on its own
-        scale — the two don't compete on a single number. Each item carries ``u_idx``
-        (its rank within its underlying) for the payoff/explain calls.
+        Only committee-endorsed candidates ("take"/"caution") are surfaced here — a
+        "pass" is the committee explicitly saying not to open this, so it has no place in
+        a "best trades to open" list even if its raw score happens to rank well. Returns
+        one group per strategy (iron condor, DACS) so each is ranked on its own scale —
+        the two don't compete on a single number. Each item carries ``u_idx`` (its rank
+        within its underlying) for the payoff/explain calls.
         """
         from paz_rav.agents.analyst import review as analyst_review
 
@@ -159,9 +162,12 @@ def create_app(
         for u in underlyings:
             feature = await feature_store.get(u)
             for i, c in enumerate(await candidate_repo.latest(u, config.top_n)):
+                verdict = analyst_review(c, feature)[0]
+                if verdict == "pass":
+                    continue   # the committee said skip it — don't recommend it
                 d = candidate_to_dict(c)
                 d["u_idx"] = i
-                d["verdict"] = analyst_review(c, feature)[0]   # take|caution|pass at a glance
+                d["verdict"] = verdict
                 by_strat.setdefault(c.strategy, []).append(d)
         for rows in by_strat.values():
             rows.sort(key=lambda d: d["score"], reverse=True)
