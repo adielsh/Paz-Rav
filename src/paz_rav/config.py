@@ -29,8 +29,20 @@ class Settings(BaseSettings):
     # runtime
     paz_env: str = "local"
     log_level: str = "INFO"
-    underlyings: str = "SPY,QQQ,IWM,SPX,RUT"
+    # SPX first (primary iron-condor name) + ETFs + big single names.
+    underlyings: str = "SPX,SPY,QQQ,IWM,NVDA,MSFT,GOOGL,AMZN,CSCO"
     agent_concurrency: int = 4
+    # data source: "yfinance" (live, free, delayed) or "fixture" (offline, always works)
+    paz_data: str = "yfinance"
+
+    # ---- strategy tuning (override via env, e.g. PAZ_DACS_MIN_FAST_RATIO=0.15) ----
+    condor_target_dte: int = 35        # iron condor front DTE (1-2 wks .. 45d)
+    dacs_short_dte: int = 35           # sell ~1 month out
+    dacs_gap_days: int = 30            # buy ~1 month beyond the short
+    dacs_otm: float = 0.10             # short call ~10% OTM
+    dacs_max_delta: float = 0.20       # short delta cap
+    dacs_min_long_price: float = 1.0   # long option worth > $1
+    dacs_min_fast_ratio: float = 0.12  # long value / risk floor
 
     @property
     def underlying_list(self) -> list[str]:

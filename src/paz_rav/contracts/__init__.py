@@ -52,4 +52,5 @@ class Feature(BaseModel):
     term_slope: float
     expected_move: float
     regime: str  # e.g. "range-low-vol", "trend-expanding"
+    rsi: float | None = None   # 14-day RSI — DACS wants stable names near ~60
     ts: datetime

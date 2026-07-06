@@ -11,6 +11,7 @@ from datetime import date, datetime, timezone
 
 from paz_rav.analytics import iv as ivmod
 from paz_rav.analytics import regime as regimemod
+from paz_rav.analytics.rsi import rsi as compute_rsi
 from paz_rav.contracts import Feature, OptionQuote
 from paz_rav.quant.pop import expected_move
 
@@ -68,6 +69,7 @@ def analyze(
 
     ivr = ivmod.iv_rank(atm_front, iv_history) if iv_history else 50.0
     regime = regimemod.classify(ivr, spot, price_history)
+    rsi_val = compute_rsi(price_history) if price_history else None
 
     feature = Feature(
         underlying=underlying,
@@ -76,6 +78,7 @@ def analyze(
         term_slope=round(term_slope, 5),
         expected_move=round(em, 4),
         regime=regime,
+        rsi=rsi_val,
         ts=ts,
     )
     return AnalyticsResult(

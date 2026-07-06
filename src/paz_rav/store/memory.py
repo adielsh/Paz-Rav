@@ -36,8 +36,12 @@ class InMemoryCandidateRepository:
         self._d: dict[str, list[Candidate]] = {}
 
     async def save(self, candidates: list[Candidate]) -> None:
+        # Replace each underlying's set with this scan's candidates (current view, no dupes).
+        by: dict[str, list[Candidate]] = {}
         for c in candidates:
-            self._d.setdefault(c.underlying, []).append(c)
+            by.setdefault(c.underlying, []).append(c)
+        for underlying, rows in by.items():
+            self._d[underlying] = rows
 
     async def latest(self, underlying: str, limit: int = 20) -> list[Candidate]:
         rows = self._d.get(underlying, [])

@@ -13,6 +13,8 @@ export interface Leg {
   option_type: "call" | "put";
   strike: number;
   quantity: number;
+  expiry?: string | null;
+  iv?: number | null;
 }
 
 export interface Candidate {
@@ -27,6 +29,8 @@ export interface Candidate {
   breakevens: number[];
   pop: number;
   score: number;
+  meta?: Record<string, number | string>;
+  u_idx?: number;
 }
 
 export interface PayoffPoint {

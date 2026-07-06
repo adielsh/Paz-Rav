@@ -34,10 +34,13 @@ def _num(x) -> float | None:
 class YFinanceMarketData:
     """Implements the MarketData port using Yahoo Finance (delayed, free)."""
 
+    # Our labels -> Yahoo tickers for indices (SPX options are ^SPX on Yahoo).
+    _YF = {"SPX": "^SPX", "RUT": "^RUT", "VIX": "^VIX", "NDX": "^NDX"}
+
     def _ticker(self, symbol: str):
         import yfinance as yf  # lazy: only needed when this adapter is actually used
 
-        return yf.Ticker(symbol)
+        return yf.Ticker(self._YF.get(symbol.upper(), symbol))
 
     # -- port methods -------------------------------------------------------
 
@@ -77,8 +80,33 @@ class YFinanceMarketData:
         return min(expiries, key=lambda e: abs((e - today).days - target_dte))
 
     async def recent_closes(self, symbol: str, days: int = 20) -> list[float]:
-        """Recent daily closes — feeds the regime classifier's trend signal."""
+        """Recent daily closes — feeds the regime classifier's trend + RSI."""
         return await asyncio.to_thread(self._blocking_closes, symbol, days)
+
+    async def earnings_within(self, symbol: str, days: int) -> bool:
+        """Best-effort: True if an earnings report falls within ``days`` (DACS avoids these)."""
+        return await asyncio.to_thread(self._blocking_earnings, symbol, days)
+
+    def _blocking_earnings(self, symbol: str, days: int) -> bool:
+        from datetime import datetime, timezone
+
+        try:
+            df = self._ticker(symbol).get_earnings_dates(limit=8)
+        except Exception:
+            return False
+        if df is None or len(df) == 0:
+            return False
+        now = datetime.now(timezone.utc)
+        for idx in df.index:
+            try:
+                dt = idx.to_pydatetime()
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+            except Exception:
+                continue
+            if 0 <= (dt - now).days <= days:
+                return True
+        return False
 
     def _blocking_closes(self, symbol: str, days: int) -> list[float]:
         hist = self._ticker(symbol).history(period=f"{max(days + 5, 10)}d")

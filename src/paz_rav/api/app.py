@@ -22,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from paz_rav import __version__
 from paz_rav.backtest import pnl_at_expiry
 from paz_rav.bus import CH_CANDIDATES, CH_FEATURES, InMemoryBus
+from paz_rav.quant.valuation import structure_pnl
 from paz_rav.config import get_settings
 from paz_rav.pipeline import Pipeline
 from paz_rav.scheduler import Scheduler
@@ -31,7 +32,7 @@ from paz_rav.store.memory import (
     InMemoryIVHistory,
 )
 from paz_rav.store.serialize import candidate_to_dict
-from paz_rav.strategies import BuildConfig, list_strategies
+from paz_rav.strategies import FOCUS_STRATEGIES, BuildConfig, list_strategies
 
 log = logging.getLogger("paz_rav.api")
 _WEB_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
@@ -44,17 +45,32 @@ def create_app(
 ) -> FastAPI:
     settings = get_settings()
     if feed is None:
-        from paz_rav.adapters import YFinanceMarketData
-        feed = YFinanceMarketData()
+        if settings.paz_data == "fixture":
+            from paz_rav.adapters.market_data import ReplayMarketData
+            fixture = Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "sample_market.json"
+            feed = ReplayMarketData(fixture)
+            underlyings = underlyings or ["SPX", "SPY", "QQQ", "IWM", "NVDA", "MSFT", "GOOGL", "AMZN", "CSCO"]
+            today = today if today is not None else date(2026, 1, 15)  # fixture as-of
+        else:
+            from paz_rav.adapters import YFinanceMarketData
+            feed = YFinanceMarketData()
     underlyings = underlyings or settings.underlying_list
-    config = config or BuildConfig(short_deltas=(16.0, 25.0), wing_widths=(5.0, 10.0),
-                                   min_open_interest=10, max_rel_spread=0.6, top_n=6)
+    config = config or BuildConfig(
+        target_dte=settings.condor_target_dte,
+        short_deltas=(16.0, 25.0), wing_widths=(5.0, 10.0),
+        min_open_interest=10, max_rel_spread=0.6, top_n=6,
+        dacs_short_dte=settings.dacs_short_dte, dacs_gap_days=settings.dacs_gap_days,
+        dacs_otm=settings.dacs_otm, dacs_max_delta=settings.dacs_max_delta,
+        dacs_min_long_price=settings.dacs_min_long_price,
+        dacs_min_fast_ratio=settings.dacs_min_fast_ratio,
+    )
 
     feature_store = InMemoryFeatureStore()
     iv_history = InMemoryIVHistory()
     candidate_repo = InMemoryCandidateRepository()
     bus = InMemoryBus()
-    pipeline = Pipeline(feed, feature_store, iv_history, candidate_repo, bus, config)
+    pipeline = Pipeline(feed, feature_store, iv_history, candidate_repo, bus, config,
+                        strategies=FOCUS_STRATEGIES)
     scheduler = Scheduler(pipeline, underlyings, interval=interval, today=today)
 
     @contextlib.asynccontextmanager
@@ -101,19 +117,51 @@ def create_app(
     async def api_candidates(underlying: str) -> dict:
         return {"underlying": underlying, "candidates": await _candidates(underlying)}
 
+    @app.get("/api/top")
+    async def api_top(n: int = 5) -> dict:
+        """The single best trades across ALL underlyings and strategies — the top goal.
+
+        Each item carries ``u_idx`` (its rank within its underlying) so the client can
+        request that candidate's payoff.
+        """
+        scored: list[tuple[float, dict]] = []
+        for u in underlyings:
+            for i, c in enumerate(await candidate_repo.latest(u, config.top_n)):
+                d = candidate_to_dict(c)
+                d["u_idx"] = i
+                scored.append((c.score, d))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return {"top": [d for _, d in scored[:n]]}
+
+    @app.get("/api/explain/{underlying}/{idx}")
+    async def api_explain(underlying: str, idx: int) -> dict:
+        """AI (or fallback) plain-language explanation of a position — clear to a child."""
+        from paz_rav.agents import explain
+        cands = await candidate_repo.latest(underlying, config.top_n)
+        if idx < 0 or idx >= len(cands):
+            return {"text": ""}
+        return {"text": await explain(cands[idx])}
+
     @app.get("/api/payoff/{underlying}/{idx}")
     async def api_payoff(underlying: str, idx: int) -> dict:
         cands = await candidate_repo.latest(underlying, config.top_n)
         if idx < 0 or idx >= len(cands):
             return {"points": []}
         c = cands[idx]
-        lo, hi = min(c.breakevens) * 0.92, max(c.breakevens) * 1.08
+        strikes = sorted(leg.strike for leg in c.legs)
+        eval_date = date.fromisoformat(c.meta["eval_date"]) if "eval_date" in c.meta else None
+        sigma = float(c.meta.get("sigma", 0.20))
+        lo, hi = strikes[0] * 0.85, strikes[-1] * 1.15
         step = (hi - lo) / 60
-        points = [{"price": round(lo + i * step, 2),
-                   "pnl": pnl_at_expiry(c, lo + i * step)} for i in range(61)]
-        return {"underlying": underlying,
-                "strikes": sorted(leg.strike for leg in c.legs),
-                "points": points}
+        # multi-expiry aware: prices still-alive long legs (correct for DACS), intrinsic
+        # for same-expiry legs (iron condor). Falls back to expiry intrinsic if no eval date.
+        points = []
+        for i in range(61):
+            s = lo + i * step
+            pnl = (structure_pnl(c.credit, c.legs, s, eval_date, config.r, sigma)
+                   if eval_date else pnl_at_expiry(c, s))
+            points.append({"price": round(s, 2), "pnl": round(pnl, 2)})
+        return {"underlying": underlying, "strikes": strikes, "points": points}
 
     @app.websocket("/ws")
     async def ws(websocket: WebSocket) -> None:
