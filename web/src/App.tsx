@@ -2,10 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import Suggestions from "./components/Suggestions";
 import TradeDetails from "./components/TradeDetails";
 import DacsGuide from "./components/DacsGuide";
+import { strategyColor, strategyLabel } from "./lib";
 import type { Candidate, PayoffPoint } from "./types";
 
+interface Group {
+  strategy: string;
+  trades: Candidate[];
+}
+
 export default function App() {
-  const [top, setTop] = useState<Candidate[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
   const [sel, setSel] = useState(0);
   const [payoff, setPayoff] = useState<PayoffPoint[]>([]);
   const [explanation, setExplanation] = useState("");
@@ -14,10 +20,9 @@ export default function App() {
   const refreshTop = () =>
     fetch("/api/top?n=5")
       .then((r) => r.json())
-      .then((d) => setTop(d.top ?? []))
+      .then((d) => setGroups(d.groups ?? []))
       .catch(() => {});
 
-  // Live WebSocket: any new scan refreshes the Top-5.
   useEffect(() => {
     let ws: WebSocket;
     let closed = false;
@@ -44,9 +49,9 @@ export default function App() {
     };
   }, []);
 
-  const current = useMemo(() => top[sel] ?? null, [top, sel]);
+  const flat = useMemo(() => groups.flatMap((g) => g.trades), [groups]);
+  const current = flat[sel] ?? null;
 
-  // Fetch payoff + AI explanation for the selected suggestion.
   useEffect(() => {
     if (!current) {
       setPayoff([]);
@@ -66,14 +71,14 @@ export default function App() {
   }, [current]);
 
   return (
-    <div className="max-w-5xl mx-auto px-5 py-6">
+    <div className="max-w-6xl mx-auto px-5 py-6">
       <header className="flex items-center justify-between mb-5">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">
-            Paz Rav <span className="text-slate-500 text-sm font-normal">· top 5 to open</span>
+            Paz Rav <span className="text-slate-500 text-sm font-normal">· best positions to open</span>
           </h1>
           <p className="text-[11px] text-slate-500 font-mono mt-0.5">
-            Iron Condor · DACS 1.0 — every number computed
+            5 best per strategy — Iron Condor · DACS 1.0
           </p>
         </div>
         <span
@@ -86,14 +91,32 @@ export default function App() {
       </header>
 
       <div className="grid lg:grid-cols-[1.1fr_1fr] gap-5">
-        <section>
-          <h2 className="text-[11px] uppercase tracking-wider text-slate-500 font-mono mb-2">
-            5 best positions to open
-          </h2>
-          <Suggestions trades={top} selected={sel} onSelect={setSel} />
-        </section>
+        <div className="space-y-5">
+          {groups.length === 0 && (
+            <div className="text-slate-500 text-sm">Waiting for the first scan…</div>
+          )}
+          {groups.map((g, gi) => {
+            const offset = groups.slice(0, gi).reduce((a, x) => a + x.trades.length, 0);
+            return (
+              <section key={g.strategy}>
+                <h2
+                  className="text-xs font-semibold font-mono mb-2 flex items-center gap-2"
+                  style={{ color: strategyColor(g.strategy) }}
+                >
+                  <span className="w-2 h-2 rounded-full" style={{ background: strategyColor(g.strategy) }} />
+                  {strategyLabel(g.strategy)} — top {g.trades.length}
+                </h2>
+                <Suggestions
+                  trades={g.trades}
+                  selected={sel - offset}
+                  onSelect={(i) => setSel(offset + i)}
+                />
+              </section>
+            );
+          })}
+        </div>
 
-        <section className="rounded-xl border border-line bg-panel/40 p-4">
+        <section className="rounded-xl border border-line bg-panel/40 p-4 lg:sticky lg:top-6 self-start">
           <TradeDetails candidate={current} points={payoff} explanation={explanation} />
         </section>
       </div>

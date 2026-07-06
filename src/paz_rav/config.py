@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     paz_data: str = "yfinance"
 
     # ---- strategy tuning (override via env, e.g. PAZ_DACS_MIN_FAST_RATIO=0.15) ----
+    # Volatility risk premium: options are priced ~15% above what realizes, which is the
+    # documented edge premium-sellers harvest. Set 0 to price at fair value.
+    vrp: float = 0.15
     condor_target_dte: int = 35        # iron condor front DTE (1-2 wks .. 45d)
     dacs_short_dte: int = 35           # sell ~1 month out
     dacs_gap_days: int = 30            # buy ~1 month beyond the short

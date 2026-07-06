@@ -69,7 +69,7 @@ class DACS:
         c = finalize(
             underlying=underlying, strategy=self.name, legs=legs, entry_credit=entry,
             spot=spot, eval_date=short_exp, sigma=short.iv or 0.20, today=today,
-            regime_fit=dacs_fit(ctx), width=abs(long.strike - short.strike),
+            regime_fit=dacs_fit(ctx), width=abs(long.strike - short.strike), vrp=config.vrp,
         )
         if c.max_loss <= 1e-6:
             return []

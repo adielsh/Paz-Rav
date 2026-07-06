@@ -100,7 +100,7 @@ class DoubleDiagonal:
                 c = finalize(
                     underlying=underlying, strategy=self.name, legs=legs, entry_credit=entry,
                     spot=spot, eval_date=front, sigma=sp.iv or 0.20, today=today,
-                    regime_fit=fit, width=wing,
+                    regime_fit=fit, width=wing, vrp=config.vrp,
                 )
                 if c.max_loss > 1e-6:      # keep only well-defined-risk candidates
                     out.append(c)

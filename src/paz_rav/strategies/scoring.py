@@ -45,17 +45,19 @@ def dacs_fit(ctx: MarketContext) -> float:
 def finalize(
     *, underlying: str, strategy: str, legs: list[Leg], entry_credit: float,
     spot: float, eval_date: date, sigma: float, today: date, regime_fit: float,
-    r: float = 0.04, width: float = 0.0,
+    r: float = 0.04, width: float = 0.0, vrp: float = 0.0,
     max_loss: float | None = None, max_profit: float | None = None,
     breakevens: tuple[float, ...] | None = None,
 ) -> Candidate:
     """Price a structure on the grid and package a ranked Candidate.
 
-    Analytic overrides (``max_loss`` etc.) are used when a structure has an exact closed
-    form (an iron condor); otherwise the grid's numbers are used (diagonals).
+    ``vrp`` is the volatility risk premium: the grid's realized vol is ``sigma*(1-vrp)``,
+    so selling premium at the market IV carries positive expectancy — the condor's edge.
+    Analytic overrides (``max_loss`` etc.) are used for closed-form structures (condor).
     """
     legs_t = tuple(legs)
-    gs = grid_stats(entry_credit, legs_t, spot, eval_date, sigma, today, r)
+    realized = sigma * (1.0 - vrp)
+    gs = grid_stats(entry_credit, legs_t, spot, eval_date, sigma, today, r, realized_vol=realized)
     ml = max_loss if max_loss is not None else gs.max_loss
     mp = max_profit if max_profit is not None else gs.max_profit
     be = breakevens if breakevens is not None else gs.breakevens

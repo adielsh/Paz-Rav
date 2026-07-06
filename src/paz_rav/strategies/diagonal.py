@@ -59,6 +59,7 @@ class Diagonal:
                         underlying=underlying, strategy=f"{self.name}_{right}", legs=legs,
                         entry_credit=entry, spot=spot, eval_date=front,
                         sigma=short.iv or 0.20, today=today, regime_fit=fit, width=wing,
+                        vrp=config.vrp,
                     )
                     if c.max_loss > 1e-6:
                         out.append(c)

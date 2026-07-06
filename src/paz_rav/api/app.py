@@ -58,7 +58,7 @@ def create_app(
     config = config or BuildConfig(
         target_dte=settings.condor_target_dte,
         short_deltas=(16.0, 25.0), wing_widths=(5.0, 10.0),
-        min_open_interest=10, max_rel_spread=0.6, top_n=6,
+        min_open_interest=10, max_rel_spread=0.6, top_n=6, vrp=settings.vrp,
         dacs_short_dte=settings.dacs_short_dte, dacs_gap_days=settings.dacs_gap_days,
         dacs_otm=settings.dacs_otm, dacs_max_delta=settings.dacs_max_delta,
         dacs_min_long_price=settings.dacs_min_long_price,
@@ -119,19 +119,24 @@ def create_app(
 
     @app.get("/api/top")
     async def api_top(n: int = 5) -> dict:
-        """The single best trades across ALL underlyings and strategies — the top goal.
+        """The best ``n`` trades PER strategy, across all underlyings.
 
-        Each item carries ``u_idx`` (its rank within its underlying) so the client can
-        request that candidate's payoff.
+        Returns one group per strategy (iron condor, DACS) so each is ranked on its own
+        scale — the two don't compete on a single number. Each item carries ``u_idx``
+        (its rank within its underlying) for the payoff/explain calls.
         """
-        scored: list[tuple[float, dict]] = []
+        by_strat: dict[str, list[dict]] = {}
         for u in underlyings:
             for i, c in enumerate(await candidate_repo.latest(u, config.top_n)):
                 d = candidate_to_dict(c)
                 d["u_idx"] = i
-                scored.append((c.score, d))
-        scored.sort(key=lambda x: x[0], reverse=True)
-        return {"top": [d for _, d in scored[:n]]}
+                by_strat.setdefault(c.strategy, []).append(d)
+        for rows in by_strat.values():
+            rows.sort(key=lambda d: d["score"], reverse=True)
+
+        groups = [{"strategy": s, "trades": by_strat.get(s, [])[:n]}
+                  for s in FOCUS_STRATEGIES if s in by_strat]
+        return {"groups": groups}
 
     @app.get("/api/explain/{underlying}/{idx}")
     async def api_explain(underlying: str, idx: int) -> dict:

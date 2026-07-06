@@ -61,17 +61,20 @@ class GridStats:
 
 def grid_stats(
     entry_credit: float, legs: tuple[Leg, ...], spot: float, eval_date: date,
-    sigma: float, today: date, r: float = 0.04, *, n: int = 201, width: float = 4.0,
+    sigma: float, today: date, r: float = 0.04, *,
+    realized_vol: float | None = None, n: int = 201, width: float = 4.0,
 ) -> GridStats:
     """POP, expected P&L, max profit/loss and breakevens via lognormal integration.
 
-    The underlying at ``eval_date`` is lognormal with vol ``sigma`` over the horizon
-    today->eval_date. We scan ``n`` price points spanning ``±width`` sigma in log-space,
-    weight each by the lognormal density, and evaluate ``structure_pnl`` at each.
+    The underlying at ``eval_date`` is lognormal over today->eval_date. The *distribution*
+    uses ``realized_vol`` (what the underlying is expected to actually move); still-alive
+    legs are *priced* at ``sigma`` (the market implied vol). When realized_vol < sigma
+    (the volatility risk premium), selling premium has positive expectancy — the real edge.
     """
+    rv = realized_vol if realized_vol is not None else sigma
     t = max((eval_date - today).days, 1) / 365.0
-    sig_sqrt_t = max(sigma, 1e-6) * math.sqrt(t)
-    mu = math.log(spot) + (r - 0.5 * sigma * sigma) * t
+    sig_sqrt_t = max(rv, 1e-6) * math.sqrt(t)
+    mu = math.log(spot) + (r - 0.5 * rv * rv) * t
 
     ln_lo, ln_hi = math.log(spot) - width * sig_sqrt_t, math.log(spot) + width * sig_sqrt_t
     step = (ln_hi - ln_lo) / (n - 1)

@@ -28,7 +28,7 @@ class IronCondor:
         self, *, underlying: str, spot: float, dte: int,
         put_long: float, put_short: float, call_short: float, call_long: float,
         credit: float, sigma: float,
-        today: date | None = None, ctx: MarketContext | None = None,
+        today: date | None = None, ctx: MarketContext | None = None, vrp: float = 0.0,
     ) -> Candidate:
         """Assemble a priced iron condor from its four strikes and the net credit."""
         if not (put_long < put_short < call_short < call_long):
@@ -48,7 +48,7 @@ class IronCondor:
         ]
         return finalize(
             underlying=underlying, strategy=self.name, legs=legs, entry_credit=credit,
-            spot=spot, eval_date=eval_date, sigma=sigma, today=today,
+            spot=spot, eval_date=eval_date, sigma=sigma, today=today, vrp=vrp,
             regime_fit=condor_fit(ctx or MarketContext()), width=width,
             max_profit=credit, max_loss=width - credit,
             breakevens=(put_short - credit, call_short + credit),
@@ -108,7 +108,7 @@ class IronCondor:
                         put_long=lp.strike, put_short=sp.strike,
                         call_short=sc.strike, call_long=lc.strike,
                         credit=round(credit, 2), sigma=sp.iv or 0.20,
-                        today=today, ctx=ctx,
+                        today=today, ctx=ctx, vrp=config.vrp,
                     ))
                 except ValueError:
                     continue

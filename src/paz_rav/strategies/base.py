@@ -98,6 +98,7 @@ class BuildConfig:
     max_rel_spread: float = 0.60                # reject legs wider than this
     r: float = 0.04
     top_n: int = 10
+    vrp: float = 0.0                            # volatility risk premium (realized = iv*(1-vrp))
     # ---- DACS knobs ----
     dacs_short_dte: int = 35                     # sell ~1 month out
     dacs_gap_days: int = 30                      # buy ~1 month beyond the short
