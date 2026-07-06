@@ -8,9 +8,9 @@ Paz Rav — a real-time options strategy engine for **Iron Condor** and **DACS 1
 diagonal adaptive calendar spread). It scans a fixed universe of underlyings, ranks
 candidate positions with a deterministic quant core, runs them through an AI judgment
 layer (Analyst + Critic + Explainer), and serves a live dashboard for opening/closing
-paper positions. Full rationale and phased roadmap live in `README.md` — read it before
-making architectural changes; this file only covers what you need to be productive day to
-day.
+paper positions. Full rationale lives in `docs/ARCHITECTURE.md`, running/deployment in
+`docs/DEPLOYMENT.md`, and phase status in `docs/ROADMAP.md` — read them before making
+architectural changes; this file only covers what you need to be productive day to day.
 
 **Core design rule, non-negotiable:** every greek, IV, price, POP, and P&L comes from
 deterministic Python (`src/paz_rav/quant/`, `analytics/`, `strategies/`, `backtest/`). LLMs
@@ -88,13 +88,16 @@ MarketData feed → analytics.analyze() → FeatureStore + IVHistory (+ publish 
 `api/app.py`'s `create_app()` wires a `Scheduler` (a timer, not a service) around this and
 exposes it over FastAPI + a WebSocket that fans out the bus.
 
-### Storage is swappable behind Protocols, not swapped in practice yet
+### Storage is swappable behind Protocols
 `store/base.py` and `positions/base.py` define `Protocol`s (`FeatureStore`, `IVHistoryStore`,
 `CandidateRepository`, `PositionRepository`). Each has an in-memory implementation used by
-default and in tests, plus real Redis/Postgres implementations
-(`store/redis_store.py`, `store/postgres_store.py`) used when `PAZ_PERSIST=redis_postgres`.
-**Positions currently stay in-memory even in that mode** — only features/IV-history/candidates
-move to Redis/Postgres. If you add persistence for positions, follow the existing pattern.
+default and in tests, plus real Redis/Postgres implementations (`store/redis_store.py`,
+`store/postgres_store.py`, `store/postgres_position_repo.py`) used when
+`PAZ_PERSIST=redis_postgres` — features/IV-history/bus move to Redis, candidates and
+positions to Postgres. `PostgresPositionRepository.save()` is an upsert keyed on the
+position's UUID (a position is mutated over its life: alert set/cleared, then closed) —
+`PostgresCandidateRepository.save()` is a plain insert (candidates are always fresh per
+scan). Follow whichever pattern matches when adding a new Postgres-backed store.
 
 Building the Postgres pool must happen inside FastAPI's `lifespan` coroutine, not at
 `create_app()` time — `asyncpg` binds its pool to the event loop that creates it, and a
@@ -134,7 +137,9 @@ silently no-ops without `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`.
 is computed directly from that (`entry_credit + exit_credit`), never modeled. When a
 position closes, its outcome is scored back onto the exact Langfuse trace the opening
 committee decision produced (`Position.langfuse_trace_id`) — this is the closed feedback
-loop described in the README's Phase 3.
+loop described in `docs/ROADMAP.md`'s Phase 3. Positions persist to Postgres (not just
+in-memory) via `PostgresPositionRepository`, following the same "build inside `lifespan`"
+rule as the other Postgres-backed stores.
 
 ### Frontend
 `web/src/theme.ts` and `web/tailwind.config.js` hold the same color palette in two places

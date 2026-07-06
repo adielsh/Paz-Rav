@@ -7,7 +7,8 @@ not a trading feed. The real-time production feed is Interactive Brokers (see
 downstream changes when you switch.
 
 yfinance is synchronous and network-bound, so every blocking call is pushed to a worker
-thread via ``asyncio.to_thread`` — the event loop is never blocked (README §7).
+thread via ``asyncio.to_thread`` — the event loop is never blocked (docs/ARCHITECTURE.md,
+concurrency model).
 """
 
 from __future__ import annotations

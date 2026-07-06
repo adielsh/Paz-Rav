@@ -2,7 +2,7 @@
 
 Never guesses: every check compares against numbers already computed by the quant
 valuation engine or stored on the position at open time. No AI here — same principle as
-the rest of the deterministic core (README §2).
+the rest of the deterministic core.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from paz_rav.quant.valuation import structure_pnl
 
 @dataclass(frozen=True, slots=True)
 class ExitConfig:
-    """Tunable thresholds. Defaults match the documented rules (README §5, DACS guide)."""
+    """Tunable thresholds. Defaults match the documented rules (docs/ARCHITECTURE.md, DACS guide)."""
 
     # Iron condor: take profit early, time-stop near expiry, or cut a tested side.
     condor_profit_target: float = 0.50     # close at 50% of max credit captured

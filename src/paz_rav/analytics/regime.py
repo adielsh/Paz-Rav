@@ -1,7 +1,7 @@
 """Rule-based market-regime classifier — the gate that keeps us out of bad setups.
 
 Deterministic and transparent: trend from price vs. its recent mean, vol state from IV
-rank. This is the #1 account-killer guard (README §1) — an LLM never overrides it; the
+rank. This is the #1 account-killer guard — an LLM never overrides it; the
 Phase-2 committee only reasons *within* the regime this returns.
 """
 

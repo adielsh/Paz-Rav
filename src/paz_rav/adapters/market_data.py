@@ -2,7 +2,7 @@
 
 ``MarketData`` is the interface the ingestion module programs against. ``ReplayMarketData``
 implements it from a JSON fixture so the whole pipeline runs with no vendor key — and so
-backtest replay uses the exact same interface as live (README §11.2, one code path).
+backtest replay uses the exact same interface as live (docs/ROADMAP.md, one code path).
 
 The live ``PolygonMarketData`` adapter (WebSocket/REST) lands here in Phase 0/1; it will
 implement the same Protocol so nothing downstream changes.

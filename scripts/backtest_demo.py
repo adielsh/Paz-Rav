@@ -1,4 +1,4 @@
-"""Walk-forward backtest: prove the edge for BOTH strategies (README §11.3).
+"""Walk-forward backtest: prove the edge for BOTH strategies (docs/ROADMAP.md).
 
 Honest about the method: free real historical OPTION CHAINS don't exist, so this
 simulates a chain at each cycle (Black-Scholes off a synthetic underlying path) rather

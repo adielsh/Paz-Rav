@@ -3,7 +3,7 @@
 These reference implementations use only the Python standard library so the whole
 test suite runs with zero extra installs. The optional `quant` extra (numpy / scipy /
 py_vollib) is for performance and cross-validation, not correctness — the parity test
-(README §11.1) checks these against py_vollib when it is installed.
+(docs/ROADMAP.md) checks these against py_vollib when it is installed.
 """
 
 from paz_rav.quant.greeks import Greeks, black_scholes, greeks

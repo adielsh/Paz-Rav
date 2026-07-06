@@ -1,7 +1,7 @@
 """FastAPI app — REST reads + a WebSocket that fans out the bus to the dashboard.
 
 The app factory wires the deterministic engine (feed -> pipeline -> stores + bus) and
-runs a background scan loop. The browser talks only to this module (README §4A).
+runs a background scan loop. The browser talks only to this module (docs/ARCHITECTURE.md).
 
 Run locally (real data):   uvicorn paz_rav.api.app:app --reload
 """

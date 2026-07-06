@@ -1,8 +1,9 @@
 # Paz Rav — AWS Terraform (Stage 1: App Runner)
 
 **Status: scaffold only — nothing has been applied or deployed.** These files describe
-the cheapest real deployment from README §8B (App Runner + RDS + ElastiCache), so going
-live is `terraform apply` once you have an AWS account and credentials — not a rewrite.
+the cheapest real deployment from [`docs/DEPLOYMENT.md`](../../docs/DEPLOYMENT.md)
+(App Runner + RDS + ElastiCache), so going live is `terraform apply` once you have an
+AWS account and credentials — not a rewrite.
 
 ## What this provisions
 - **ECR** repository (push the same image `docker compose build` already produces)
@@ -11,8 +12,8 @@ live is `terraform apply` once you have an AWS account and credentials — not a
 - **ElastiCache** Redis (cache.t4g.micro)
 - **Secrets Manager** entries for `DATABASE_URL` / `REDIS_URL` / `ANTHROPIC_API_KEY`
 
-Estimated cost at this tier: **~$30-40/month** (see README §8B for the breakdown and the
-cheaper/pricier alternatives).
+Estimated cost at this tier: **~$30-40/month** (see `docs/DEPLOYMENT.md` for the
+breakdown and the cheaper/pricier alternatives).
 
 ## Before you run this
 1. An AWS account + credentials (`aws configure` or environment variables) — **not provided

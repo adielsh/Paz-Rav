@@ -1,6 +1,6 @@
 """Scheduler — a small in-process timer that scans all underlyings on a loop.
 
-A component, not a service (README §4A): it just calls ``Pipeline.run_once`` for each
+A component, not a service (docs/ARCHITECTURE.md): it just calls ``Pipeline.run_once`` for each
 underlying every ``interval`` seconds. Scans run concurrently but the pipeline itself
 never blocks the event loop (all I/O is async).
 """

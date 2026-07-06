@@ -2,7 +2,7 @@
 
 Feed it (candidate, terminal_price) pairs in chronological order; it returns win rate,
 average P&L, total, and max drawdown of the equity curve — the numbers you decide to
-trust the strategy on (README §11.3).
+trust the strategy on (docs/ROADMAP.md).
 """
 
 from __future__ import annotations
