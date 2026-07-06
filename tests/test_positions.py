@@ -214,3 +214,25 @@ def test_close_position_missing_or_already_closed_returns_none():
         assert missing is None
 
     asyncio.run(go())
+
+
+# ---- Serialization round-trip (what PostgresPositionRepository relies on) ----
+
+def test_position_serialization_round_trip_open():
+    from paz_rav.store.serialize import position_from_dict, position_to_dict
+
+    pos = Position.open_from(condor(), datetime(2026, 1, 15, tzinfo=timezone.utc),
+                             langfuse_trace_id="trace-123")
+    restored = position_from_dict(position_to_dict(pos))
+    assert restored == pos
+
+
+def test_position_serialization_round_trip_closed():
+    from paz_rav.store.serialize import position_from_dict, position_to_dict
+
+    pos = Position.open_from(condor(), datetime(2026, 1, 15, tzinfo=timezone.utc))
+    closed = pos.close_manually(-3.50, datetime(2026, 1, 20, tzinfo=timezone.utc))
+    restored = position_from_dict(position_to_dict(closed))
+    assert restored == closed
+    assert restored.status == "closed"
+    assert restored.realized_pnl == closed.realized_pnl

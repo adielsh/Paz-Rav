@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 from paz_rav.contracts import Feature
+from paz_rav.positions.base import Position
 from paz_rav.strategies.base import Candidate, Leg
 
 
@@ -70,5 +71,44 @@ def candidate_from_dict(d: dict) -> Candidate:
         breakevens=tuple(d["breakevens"]),
         pop=d.get("pop", 0.0),
         score=d.get("score", 0.0),
+        meta=d.get("meta", {}) or {},
+    )
+
+
+def position_to_dict(p: Position) -> dict:
+    """JSON-safe dict (dates -> ISO strings, tuples -> lists)."""
+    return {
+        "id": p.id,
+        "underlying": p.underlying,
+        "strategy": p.strategy,
+        "legs": [_leg_to_dict(leg) for leg in p.legs],
+        "entry_credit": p.entry_credit,
+        "opened_at": p.opened_at.isoformat(),
+        "langfuse_trace_id": p.langfuse_trace_id,
+        "status": p.status,
+        "alert": p.alert,
+        "close_reason": p.close_reason,
+        "closed_at": p.closed_at.isoformat() if p.closed_at else None,
+        "exit_credit": p.exit_credit,
+        "realized_pnl": p.realized_pnl,
+        "meta": dict(p.meta) if p.meta else {},
+    }
+
+
+def position_from_dict(d: dict) -> Position:
+    return Position(
+        id=d["id"],
+        underlying=d["underlying"],
+        strategy=d["strategy"],
+        legs=tuple(_leg_from_dict(leg) for leg in d["legs"]),
+        entry_credit=d["entry_credit"],
+        opened_at=datetime.fromisoformat(d["opened_at"]),
+        langfuse_trace_id=d.get("langfuse_trace_id"),
+        status=d.get("status", "open"),
+        alert=d.get("alert"),
+        close_reason=d.get("close_reason"),
+        closed_at=datetime.fromisoformat(d["closed_at"]) if d.get("closed_at") else None,
+        exit_credit=d.get("exit_credit"),
+        realized_pnl=d.get("realized_pnl"),
         meta=d.get("meta", {}) or {},
     )

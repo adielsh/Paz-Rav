@@ -50,12 +50,14 @@ async def _build_real_stores(settings):
     import redis.asyncio as aioredis
 
     from paz_rav.bus.redis_bus import RedisBus
+    from paz_rav.store.postgres_position_repo import PostgresPositionRepository
     from paz_rav.store.postgres_store import PostgresCandidateRepository
     from paz_rav.store.redis_store import RedisFeatureStore, RedisIVHistory
 
     r = aioredis.from_url(settings.redis_url, decode_responses=True)
     candidate_repo = await PostgresCandidateRepository.connect(settings.database_url)
-    return RedisFeatureStore(r), RedisIVHistory(r), RedisBus(r), candidate_repo
+    position_repo = await PostgresPositionRepository.connect(settings.database_url)
+    return RedisFeatureStore(r), RedisIVHistory(r), RedisBus(r), candidate_repo, position_repo
 
 
 def create_app(
@@ -93,8 +95,8 @@ def create_app(
     iv_history = InMemoryIVHistory()
     candidate_repo = InMemoryCandidateRepository()
     bus = InMemoryBus()
-    # Positions (paper, Phase 3) stay in-memory for now regardless of PAZ_PERSIST — a
-    # Redis/Postgres-backed ledger is the natural next step once this MVP is proven.
+    # Placeholder; swapped for PostgresPositionRepository inside `lifespan` (same
+    # correct-event-loop reasoning as the other stores) when PAZ_PERSIST=redis_postgres.
     position_repo = InMemoryPositionRepository()
     pipeline = Pipeline(feed, feature_store, iv_history, candidate_repo, bus, config,
                         strategies=FOCUS_STRATEGIES, position_repo=position_repo)
@@ -102,9 +104,9 @@ def create_app(
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        nonlocal feature_store, iv_history, bus, candidate_repo, pipeline, scheduler
+        nonlocal feature_store, iv_history, bus, candidate_repo, position_repo, pipeline, scheduler
         if settings.paz_persist == "redis_postgres":
-            feature_store, iv_history, bus, candidate_repo = await _build_real_stores(settings)
+            feature_store, iv_history, bus, candidate_repo, position_repo = await _build_real_stores(settings)
             pipeline = Pipeline(feed, feature_store, iv_history, candidate_repo, bus, config,
                                 strategies=FOCUS_STRATEGIES, position_repo=position_repo)
             scheduler = Scheduler(pipeline, underlyings, interval=interval, today=today)
