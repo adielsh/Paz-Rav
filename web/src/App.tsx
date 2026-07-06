@@ -11,6 +11,39 @@ interface Group {
   trades: Candidate[];
 }
 
+function Logo() {
+  // A one-off decorative gradient (lighter/darker variants of the brand gold) — not a
+  // reusable semantic token, so it's not in theme.ts.
+  return (
+    <div
+      className="w-9 h-9 rounded-xl grid place-items-center font-mono font-bold text-[15px] shadow-elevated shrink-0"
+      style={{ background: "linear-gradient(155deg, #E8C179, #B4863B)", color: "#1A1206" }}
+      aria-hidden="true"
+    >
+      P
+    </div>
+  );
+}
+
+function ConnectionBadge({ connected }: { connected: boolean }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 text-xs font-mono font-medium px-2.5 py-1.5 rounded-full border ${
+        connected ? "border-good/35 text-good bg-good/10" : "border-bad/35 text-bad bg-bad/10"
+      }`}
+      role="status"
+      aria-live="polite"
+    >
+      <span
+        className={`w-1.5 h-1.5 rounded-full ${connected ? "bg-good" : "bg-bad"} ${
+          connected ? "" : "animate-pulse-soft"
+        }`}
+      />
+      {connected ? "Live" : "Reconnecting…"}
+    </span>
+  );
+}
+
 export default function App() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
@@ -67,7 +100,7 @@ export default function App() {
         const msg = JSON.parse(ev.data);
         if (msg.type === "candidates" || msg.type === "snapshot") {
           refreshTop();
-          refreshPositions();   // a scan may have swept the Exit Manager too
+          refreshPositions(); // a scan may have swept the Exit Manager too
         }
       };
     };
@@ -100,40 +133,42 @@ export default function App() {
   }, [current]);
 
   return (
-    <div className="max-w-6xl mx-auto px-5 py-6">
-      <header className="flex items-center justify-between mb-5">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">
-            Paz Rav <span className="text-slate-500 text-sm font-normal">· best positions to open</span>
-          </h1>
-          <p className="text-[11px] text-slate-500 font-mono mt-0.5">
-            5 best per strategy — Iron Condor · DACS 1.0
-          </p>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-7">
+      <header className="flex items-center justify-between gap-4 mb-6">
+        <div className="flex items-center gap-3">
+          <Logo />
+          <div>
+            <h1 className="text-lg font-semibold tracking-tight leading-none">
+              Paz Rav
+              <span className="text-ink-2 text-sm font-normal ml-2">best positions to open</span>
+            </h1>
+            <p className="text-2xs uppercase tracking-wider text-ink-3 font-mono mt-1.5">
+              Iron Condor · DACS 1.0 — top 5 each
+            </p>
+          </div>
         </div>
-        <span
-          className={`text-[11px] font-mono px-2.5 py-1 rounded-full border ${
-            connected ? "border-good/40 text-good bg-good/10" : "border-bad/40 text-bad bg-bad/10"
-          }`}
-        >
-          {connected ? "● live" : "○ reconnecting"}
-        </span>
+        <ConnectionBadge connected={connected} />
       </header>
 
-      <div className="grid lg:grid-cols-[1.1fr_1fr] gap-5">
-        <div className="space-y-5">
+      <div className="grid lg:grid-cols-[1.15fr_1fr] gap-5">
+        <div className="space-y-6">
           {groups.length === 0 && (
-            <div className="text-slate-500 text-sm">Waiting for the first scan…</div>
+            <div className="rounded-2xl border border-line bg-panel/60 p-6 text-center text-ink-2 text-sm">
+              Waiting for the first scan…
+            </div>
           )}
           {groups.map((g, gi) => {
             const offset = groups.slice(0, gi).reduce((a, x) => a + x.trades.length, 0);
             return (
               <section key={g.strategy}>
-                <h2
-                  className="text-xs font-semibold font-mono mb-2 flex items-center gap-2"
-                  style={{ color: strategyColor(g.strategy) }}
-                >
-                  <span className="w-2 h-2 rounded-full" style={{ background: strategyColor(g.strategy) }} />
-                  {strategyLabel(g.strategy)} — top {g.trades.length}
+                <h2 className="text-xs font-semibold font-mono mb-2.5 flex items-center gap-2 tracking-wide">
+                  <span
+                    className="w-2 h-2 rounded-full"
+                    style={{ background: strategyColor(g.strategy) }}
+                    aria-hidden="true"
+                  />
+                  <span style={{ color: strategyColor(g.strategy) }}>{strategyLabel(g.strategy)}</span>
+                  <span className="text-ink-3 font-normal">— top {g.trades.length}</span>
                 </h2>
                 <Suggestions
                   trades={g.trades}
@@ -146,16 +181,16 @@ export default function App() {
           })}
         </div>
 
-        <section className="rounded-xl border border-line bg-panel/40 p-4 lg:sticky lg:top-6 self-start">
+        <section className="rounded-2xl border border-line bg-panel/70 p-5 lg:sticky lg:top-6 self-start">
           <TradeDetails candidate={current} points={payoff} review={review} />
         </section>
       </div>
 
-      <section className="mt-5">
+      <section className="mt-6">
         <Positions positions={positions} onClose={closePosition} />
       </section>
 
-      <section className="mt-5">
+      <section className="mt-6">
         <DacsGuide />
       </section>
     </div>

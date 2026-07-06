@@ -1,17 +1,49 @@
+/* IBM Plex Sans (UI/body) + JetBrains Mono (all numeric/data) — degrades gracefully to
+   the system fallback stack in tailwind.config.js if the network fetch fails (e.g. an
+   offline Raspberry Pi), so this is safe to keep even without guaranteed connectivity. */
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
   color-scheme: dark;
+  --bg: #05070c;
+  --panel: #0e121b;
+  --panel-2: #141a26;
+  --line: #232b3a;
+  --line-strong: #2e3849;
+  --ink: #eaeff7;
+  --ink-2: #97a2b8;
+  --ink-3: #5c6579;
+  --accent: #d9ae5b;
+  --good: #34c795;
+  --bad: #f0615a;
+  --warn: #e8a23d;
+  --info: #5b9ee8;
+  --ring: #7db0ff;
+}
+
+* {
+  border-color: var(--line);
 }
 
 body {
   margin: 0;
-  background: radial-gradient(70% 60% at 20% 0%, #17202e, #0c111a 60%);
-  color: #e6ebf2;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: radial-gradient(70% 60% at 20% 0%, var(--panel-2), var(--bg) 60%);
+  color: var(--ink);
+  font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Visible keyboard focus everywhere, including custom (non-native) interactive elements */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar {
@@ -19,6 +51,34 @@ body {
   width: 8px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #2e3b4f;
+  background: var(--line-strong);
   border-radius: 8px;
+}
+
+/* All interactive elements get a real pointer + a consistent, brief transition */
+button,
+[role="button"] {
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease,
+    transform 150ms ease,
+    opacity 150ms ease;
+}
+button:disabled,
+[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

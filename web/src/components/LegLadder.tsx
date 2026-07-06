@@ -12,13 +12,16 @@ export default function LegLadder({ legs, compact }: { legs: Leg[]; compact?: bo
           <span
             key={i}
             className={`inline-flex items-center gap-1.5 text-xs font-mono px-2.5 py-1.5 rounded-lg border ${
-              sell ? "border-bad/40 bg-bad/10 text-bad" : "border-good/40 bg-good/10 text-good"
+              sell ? "border-bad/35 bg-bad/10 text-bad" : "border-good/35 bg-good/10 text-good"
             }`}
           >
-            <span>{sell ? "🔴" : "🟢"}</span>
+            <span
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${sell ? "bg-bad" : "bg-good"}`}
+              aria-hidden="true"
+            />
             <span className="font-semibold">{sell ? "מכר" : "קנה"}</span>
-            <span className="uppercase">{leg.option_type}</span>
-            <span className="text-slate-100 font-semibold">{leg.strike}</span>
+            <span className="uppercase text-ink-2">{leg.option_type}</span>
+            <span className="text-ink font-semibold tabular-nums">{leg.strike}</span>
           </span>
         );
       })}
