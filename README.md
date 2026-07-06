@@ -406,8 +406,14 @@ UNDERLYINGS=SPY uvicorn paz_rav.api.app:app --port 8000
 - **No browser needed** — the CLI demos show the same pipeline:
   `PYTHONPATH=src python scripts/pipeline_demo.py SPY`
 - **Tests:** `python -m pytest` (pure, no infra or network).
-- Datastores (`docker compose up -d`) are optional in v1 — the app defaults to in-memory stores;
-  point it at Redis/Postgres when you want persistence.
+- Datastores (`docker compose up -d`) are optional in v1 — the app defaults to in-memory stores
+  (nothing survives a restart). For real persistence:
+  ```bash
+  docker compose up -d                       # Postgres + Redis, healthchecked
+  PAZ_PERSIST=redis_postgres UNDERLYINGS=SPY,QQQ uvicorn paz_rav.api.app:app --port 8000
+  ```
+  Verify it's real: `docker exec paz-rav-redis-1 redis-cli KEYS '*'` and
+  `docker exec paz-rav-postgres-1 psql -U paz -d pazrav -c "SELECT COUNT(*) FROM candidates;"`.
 
 ## 10. Roadmap
 - **Phase 0 — Foundations:** ✅ repo (`src/` layout), Docker Compose, shared schemas, quant core.

@@ -38,6 +38,24 @@ log = logging.getLogger("paz_rav.api")
 _WEB_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
 
 
+async def _build_real_stores(settings):
+    """Real Redis + Postgres stores. MUST run on the same event loop that will serve
+    requests — asyncpg's pool is bound to whatever loop creates it, so building it via a
+    throwaway ``asyncio.run()`` before uvicorn starts its own loop causes every later
+    query to hang (the pool belongs to a loop that's already closed). Calling this from
+    inside the FastAPI lifespan guarantees it's built on uvicorn's real loop.
+    """
+    import redis.asyncio as aioredis
+
+    from paz_rav.bus.redis_bus import RedisBus
+    from paz_rav.store.postgres_store import PostgresCandidateRepository
+    from paz_rav.store.redis_store import RedisFeatureStore, RedisIVHistory
+
+    r = aioredis.from_url(settings.redis_url, decode_responses=True)
+    candidate_repo = await PostgresCandidateRepository.connect(settings.database_url)
+    return RedisFeatureStore(r), RedisIVHistory(r), RedisBus(r), candidate_repo
+
+
 def create_app(
     *, feed=None, underlyings: list[str] | None = None,
     interval: float = 60.0, initial_scan: bool = True,
@@ -65,6 +83,10 @@ def create_app(
         dacs_min_fast_ratio=settings.dacs_min_fast_ratio,
     )
 
+    # Placeholder in-memory stores so the app is constructible synchronously; swapped
+    # for real Redis/Postgres stores inside `lifespan` (on the correct event loop) when
+    # PAZ_PERSIST=redis_postgres. Every endpoint below closes over these same names, so
+    # the `nonlocal` reassignment is visible everywhere once lifespan startup completes.
     feature_store = InMemoryFeatureStore()
     iv_history = InMemoryIVHistory()
     candidate_repo = InMemoryCandidateRepository()
@@ -75,6 +97,12 @@ def create_app(
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        nonlocal feature_store, iv_history, bus, candidate_repo, pipeline, scheduler
+        if settings.paz_persist == "redis_postgres":
+            feature_store, iv_history, bus, candidate_repo = await _build_real_stores(settings)
+            pipeline = Pipeline(feed, feature_store, iv_history, candidate_repo, bus, config,
+                                strategies=FOCUS_STRATEGIES)
+            scheduler = Scheduler(pipeline, underlyings, interval=interval, today=today)
         if initial_scan:
             await scheduler.scan_all()          # populate before serving
         task = asyncio.create_task(scheduler.run())

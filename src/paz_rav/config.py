@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     agent_concurrency: int = 4
     # data source: "yfinance" (live, free, delayed) or "fixture" (offline, always works)
     paz_data: str = "yfinance"
+    # storage: "memory" (default, nothing survives a restart) or "redis_postgres"
+    # (real persistence — features/IV-history/bus on Redis, candidates on Postgres;
+    # needs `docker compose up -d` running first).
+    paz_persist: str = "memory"
 
     # ---- strategy tuning (override via env, e.g. PAZ_DACS_MIN_FAST_RATIO=0.15) ----
     # Volatility risk premium: options are priced ~15% above what realizes, which is the
