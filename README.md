@@ -1,26 +1,87 @@
 # Paz Rav — Real-Time Options Strategy Engine
 
-> Finds the **right options strategy, at the right time, for the right duration** —
-> and proves the edge in backtest before a dollar is risked. A deterministic quant core
-> does all the math; a lean two-agent AI layer adds judgment and a full audit trail on
-> top. Nothing on screen is guessed.
+> Finds the **right options strategy, at the right time, for the right duration** — and
+> proves the edge in backtest before a dollar is risked. Deterministic Python does all
+> the math; a lean two-agent AI layer adds judgment and a full audit trail. Nothing on
+> screen is guessed.
 
 ## What it does
 
-A trader's real problem is three decisions, made continuously and without emotion:
-
-- **Which structure** — Iron Condor vs. DACS 1.0 (a diagonal calendar spread)
-- **When to enter** — only when the edge is actually present (IV rank, regime, RSI)
-- **How long to hold** — take profit early, time-stop, or cut a tested side
-
-Humans do all three badly: they hold losers, cut winners, and sell into the wrong
-regime. Paz Rav scans a fixed universe of underlyings, ranks candidates deterministically,
-runs each one past an AI committee (Analyst proposes, Critic argues against), and serves
-a live dashboard where you open paper positions and get told exactly when to close them.
+Scans a fixed universe of underlyings, ranks **Iron Condor** and **DACS 1.0** candidates
+deterministically, runs each past an AI committee (Analyst proposes, Critic argues
+against), and serves a live dashboard where you open paper positions and get told
+exactly when to close them.
 
 **The one rule that matters:** every greek, IV, price, POP, and P&L comes from
-deterministic Python. The AI never computes a number — it only reasons over numbers the
-quant core already produced. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for why.
+deterministic Python — the AI only ever reasons over numbers already computed, never
+invents one. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for why.
+
+## System at a glance
+
+```mermaid
+flowchart LR
+    subgraph Data["Market data"]
+        FEED["yfinance / IBKR"]
+    end
+    subgraph Engine["Deterministic engine (Python)"]
+        ANALYTICS["analytics<br/>greeks · IV rank · regime"]
+        BUILDER["builder<br/>score Iron Condor / DACS"]
+        POSITIONS["positions<br/>exit rules"]
+    end
+    subgraph AI["AI committee (LangGraph)"]
+        ANALYST["Analyst"]
+        CRITIC["Critic"]
+        EXPLAINER["Explainer<br/>(Claude)"]
+    end
+    subgraph Store["Storage"]
+        REDIS[("Redis<br/>hot state")]
+        PG[("Postgres<br/>candidates · positions")]
+    end
+    LF["Langfuse<br/>traces + scoring"]
+    subgraph Serve["Serve"]
+        API["FastAPI + WebSocket"]
+        WEB["React dashboard"]
+    end
+
+    FEED --> ANALYTICS --> BUILDER --> ANALYST
+    ANALYST <--> CRITIC
+    ANALYST --> EXPLAINER
+    ANALYTICS --> REDIS
+    BUILDER --> PG
+    POSITIONS --> PG
+    ANALYST -.-> LF
+    CRITIC -.-> LF
+    POSITIONS -.-> LF
+    REDIS --> API
+    PG --> API
+    API <--> WEB
+```
+
+## How a trade flows through the system
+
+```mermaid
+flowchart TD
+    A(["Scheduler tick"]) --> B["Fetch chain + compute features"]
+    B --> C["Build & score candidates"]
+    C --> D["Ranked shortlist on the dashboard"]
+    D --> E{"User opens<br/>a candidate?"}
+    E -- no --> A
+    E -- yes --> F["Analyst proposes a verdict"]
+    F --> G["Critic argues against it"]
+    G --> H{"Objection<br/>severe?"}
+    H -- yes --> F
+    H -- no --> I["Verdict + rationale shown"]
+    I --> J{"User opens<br/>the position?"}
+    J -- no --> A
+    J -- yes --> K["Position opened<br/>Langfuse trace saved"]
+    K --> L["Exit Manager checks rules<br/>every scan"]
+    L --> M{"Exit condition<br/>met?"}
+    M -- no --> L
+    M -- yes --> N["Position flagged<br/>(never auto-closed)"]
+    N --> O["User closes manually<br/>at the real fill price"]
+    O --> P["Realized P&L scored<br/>back onto the trace"]
+    P --> A
+```
 
 ## Quick start
 
@@ -48,8 +109,9 @@ Details, what's proven vs. what's a known gap, and backtest results:
 
 ## Learn more
 
-- [**`docs/ARCHITECTURE.md`**](docs/ARCHITECTURE.md) — the pipeline, why two agents (not
-  zero, not seven), the tech stack with honest trade-offs, repo layout.
+- [**`docs/ARCHITECTURE.md`**](docs/ARCHITECTURE.md) — the reasoning behind the diagrams
+  above: why two agents (not zero, not seven), why a modular monolith, the tech stack,
+  repo layout.
 - [**`docs/DEPLOYMENT.md`**](docs/DEPLOYMENT.md) — running it (Docker or from source),
   real persistence, cloud deployment stages.
 - [**`docs/ROADMAP.md`**](docs/ROADMAP.md) — phase-by-phase status and how we verify it
