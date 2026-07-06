@@ -125,11 +125,15 @@ def create_app(
         scale — the two don't compete on a single number. Each item carries ``u_idx``
         (its rank within its underlying) for the payoff/explain calls.
         """
+        from paz_rav.agents.analyst import review as analyst_review
+
         by_strat: dict[str, list[dict]] = {}
         for u in underlyings:
+            feature = await feature_store.get(u)
             for i, c in enumerate(await candidate_repo.latest(u, config.top_n)):
                 d = candidate_to_dict(c)
                 d["u_idx"] = i
+                d["verdict"] = analyst_review(c, feature)[0]   # take|caution|pass at a glance
                 by_strat.setdefault(c.strategy, []).append(d)
         for rows in by_strat.values():
             rows.sort(key=lambda d: d["score"], reverse=True)
@@ -146,6 +150,20 @@ def create_app(
         if idx < 0 or idx >= len(cands):
             return {"text": ""}
         return {"text": await explain(cands[idx])}
+
+    @app.get("/api/review/{underlying}/{idx}")
+    async def api_review(underlying: str, idx: int) -> dict:
+        """Committee review: analyst verdict + rationale, critic's objection, explanation."""
+        from paz_rav.agents import review
+        cands = await candidate_repo.latest(underlying, config.top_n)
+        if idx < 0 or idx >= len(cands):
+            return {}
+        feature = await feature_store.get(underlying)
+        out = await review(cands[idx], feature)
+        if feature is not None:
+            out["context"] = {"regime": feature.regime, "iv_rank": feature.iv_rank,
+                              "rsi": feature.rsi}
+        return out
 
     @app.get("/api/payoff/{underlying}/{idx}")
     async def api_payoff(underlying: str, idx: int) -> dict:

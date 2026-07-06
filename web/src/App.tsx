@@ -3,7 +3,7 @@ import Suggestions from "./components/Suggestions";
 import TradeDetails from "./components/TradeDetails";
 import DacsGuide from "./components/DacsGuide";
 import { strategyColor, strategyLabel } from "./lib";
-import type { Candidate, PayoffPoint } from "./types";
+import type { Candidate, PayoffPoint, Review } from "./types";
 
 interface Group {
   strategy: string;
@@ -14,7 +14,7 @@ export default function App() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [sel, setSel] = useState(0);
   const [payoff, setPayoff] = useState<PayoffPoint[]>([]);
-  const [explanation, setExplanation] = useState("");
+  const [review, setReview] = useState<Review | null>(null);
   const [connected, setConnected] = useState(false);
 
   const refreshTop = () =>
@@ -55,7 +55,7 @@ export default function App() {
   useEffect(() => {
     if (!current) {
       setPayoff([]);
-      setExplanation("");
+      setReview(null);
       return;
     }
     const idx = current.u_idx ?? 0;
@@ -63,11 +63,11 @@ export default function App() {
       .then((r) => r.json())
       .then((d) => setPayoff(d.points ?? []))
       .catch(() => setPayoff([]));
-    setExplanation("");
-    fetch(`/api/explain/${current.underlying}/${idx}`)
+    setReview(null);
+    fetch(`/api/review/${current.underlying}/${idx}`)
       .then((r) => r.json())
-      .then((d) => setExplanation(d.text ?? ""))
-      .catch(() => setExplanation(""));
+      .then((d) => setReview(d))
+      .catch(() => setReview(null));
   }, [current]);
 
   return (
@@ -117,7 +117,7 @@ export default function App() {
         </div>
 
         <section className="rounded-xl border border-line bg-panel/40 p-4 lg:sticky lg:top-6 self-start">
-          <TradeDetails candidate={current} points={payoff} explanation={explanation} />
+          <TradeDetails candidate={current} points={payoff} review={review} />
         </section>
       </div>
 

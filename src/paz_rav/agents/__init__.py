@@ -5,6 +5,7 @@ first agent is the Explainer (plain-language summaries). The Analyst + Critic co
 lands here next.
 """
 
+from paz_rav.agents.committee import review
 from paz_rav.agents.explainer import explain
 
-__all__ = ["explain"]
+__all__ = ["explain", "review"]

@@ -1,6 +1,12 @@
-import type { Candidate, PayoffPoint } from "../types";
+import type { Candidate, PayoffPoint, Review } from "../types";
 import { frontExpiry, num, strategyColor, strategyLabel } from "../lib";
 import PayoffChart from "./PayoffChart";
+
+const VERDICT: Record<string, { label: string; color: string; bg: string }> = {
+  take: { label: "לפתוח", color: "#4fb187", bg: "rgba(79,177,135,.12)" },
+  caution: { label: "בזהירות", color: "#d6a854", bg: "rgba(214,168,84,.12)" },
+  pass: { label: "לוותר", color: "#e06e60", bg: "rgba(224,110,96,.12)" },
+};
 
 function Stat({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
@@ -16,11 +22,11 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: str
 export default function TradeDetails({
   candidate,
   points,
-  explanation,
+  review,
 }: {
   candidate: Candidate | null;
   points: PayoffPoint[];
-  explanation: string;
+  review: Review | null;
 }) {
   if (!candidate) {
     return (
@@ -45,10 +51,45 @@ export default function TradeDetails({
         <span className="text-xs text-slate-400 font-mono ml-auto">⏱ {frontExpiry(c)} · DTE {c.dte}</span>
       </div>
 
+      {/* committee context: regime / IV rank / RSI */}
+      {review?.context && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-mono text-slate-400 mb-3" dir="rtl">
+          <span>משטר: <span className="text-slate-200">{review.context.regime}</span></span>
+          <span>IV rank: <span className="text-slate-200">{review.context.iv_rank}</span></span>
+          {review.context.rsi != null && (
+            <span>RSI: <span className="text-slate-200">{review.context.rsi}</span></span>
+          )}
+        </div>
+      )}
+
+      {/* analyst verdict */}
+      {review?.verdict && (
+        <div
+          className="rounded-lg p-3 mb-3 text-[13px] leading-relaxed"
+          style={{ background: VERDICT[review.verdict].bg, border: `1px solid ${VERDICT[review.verdict].color}55` }}
+          dir="rtl"
+        >
+          <span
+            className="font-semibold px-2 py-0.5 rounded-full text-xs ml-2"
+            style={{ background: VERDICT[review.verdict].color, color: "#0c111a" }}
+          >
+            {VERDICT[review.verdict].label}
+          </span>
+          <span className="text-slate-200">{review.rationale}</span>
+        </div>
+      )}
+
       {/* AI plain-language explanation — clear to a child */}
-      <div className="rounded-lg bg-accent/10 border border-accent/30 p-3 mb-4 text-[13px] leading-relaxed" dir="rtl">
-        {explanation ? explanation : <span className="text-slate-500">טוען הסבר…</span>}
+      <div className="rounded-lg bg-accent/10 border border-accent/30 p-3 mb-3 text-[13px] leading-relaxed" dir="rtl">
+        {review?.explanation ? review.explanation : <span className="text-slate-500">טוען הסבר…</span>}
       </div>
+
+      {/* critic's objection */}
+      {review?.objection && (
+        <div className="rounded-lg bg-bad/10 border border-bad/30 p-3 mb-4 text-[12px] leading-relaxed text-slate-300" dir="rtl">
+          <span className="text-bad font-semibold ml-1">המבקר:</span> {review.objection}
+        </div>
+      )}
 
       {/* legs */}
       <table className="w-full text-xs font-mono mb-4">

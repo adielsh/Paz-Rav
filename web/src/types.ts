@@ -31,9 +31,18 @@ export interface Candidate {
   score: number;
   meta?: Record<string, number | string>;
   u_idx?: number;
+  verdict?: "take" | "caution" | "pass";
 }
 
 export interface PayoffPoint {
   price: number;
   pnl: number;
+}
+
+export interface Review {
+  verdict?: "take" | "caution" | "pass";
+  rationale?: string;
+  objection?: string;
+  explanation?: string;
+  context?: { regime: string; iv_rank: number; rsi: number | null };
 }

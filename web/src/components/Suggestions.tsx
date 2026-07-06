@@ -1,6 +1,12 @@
 import type { Candidate } from "../types";
 import { frontExpiry, num, shortStrikes, strategyColor, strategyLabel } from "../lib";
 
+const VERDICT: Record<string, { label: string; color: string }> = {
+  take: { label: "לפתוח", color: "#4fb187" },
+  caution: { label: "בזהירות", color: "#d6a854" },
+  pass: { label: "לוותר", color: "#e06e60" },
+};
+
 function Metric({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
     <div className="flex flex-col">
@@ -46,6 +52,14 @@ export default function Suggestions({
               >
                 {strategyLabel(c.strategy)}
               </span>
+              {c.verdict && (
+                <span
+                  className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                  style={{ background: `${VERDICT[c.verdict].color}22`, color: VERDICT[c.verdict].color }}
+                >
+                  {VERDICT[c.verdict].label}
+                </span>
+              )}
               <span className="font-mono text-xs text-slate-400 ml-auto flex items-center gap-2">
                 <span className="text-slate-300">{dacs ? "sell 1mo · buy 2mo" : `short ${shortStrikes(c)}`}</span>
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/5">⏱ {frontExpiry(c)}</span>
