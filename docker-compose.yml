@@ -30,6 +30,33 @@ services:
       timeout: 3s
       retries: 10
 
+  # The engine + dashboard, containerized. `docker compose up -d --build` brings up the
+  # ENTIRE stack (DB + Redis + app) with one command — and this is the same image you'd
+  # push to ECR/App Runner/ECS later (README §8B).
+  app:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PAZ_PERSIST: redis_postgres
+      PAZ_DATA: ${PAZ_DATA:-fixture}
+      DATABASE_URL: postgresql://paz:paz@postgres:5432/pazrav
+      REDIS_URL: redis://redis:6379/0
+      UNDERLYINGS: ${UNDERLYINGS:-SPX,SPY,QQQ,IWM,NVDA,MSFT,GOOGL,AMZN,CSCO}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
 volumes:
   pgdata:
   redisdata:
