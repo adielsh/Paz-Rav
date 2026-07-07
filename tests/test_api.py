@@ -76,6 +76,18 @@ def test_top_ranks_take_before_caution():
                 f"{g['strategy']}: a 'caution' trade outranked a 'take' trade")
 
 
+def test_top_caps_repeats_of_the_same_underlying():
+    """Ten strike-variants of one name are near-duplicates of the same market view —
+    /api/top must keep at most 2 per underlying per strategy so the list stays diverse."""
+    with make_client() as c:
+        r = c.get("/api/top?n=10").json()
+        for g in r["groups"]:
+            per: dict[str, int] = {}
+            for t in g["trades"]:
+                per[t["underlying"]] = per.get(t["underlying"], 0) + 1
+            assert all(v <= 2 for v in per.values()), f"{g['strategy']}: {per}"
+
+
 def test_open_position_and_list(monkeypatch):
     with make_client() as c:
         opened = c.post("/api/positions/open/SPY/0").json()

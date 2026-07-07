@@ -235,8 +235,21 @@ def create_app(
         # what makes a genuinely AI-endorsed trade surface even over a higher-scoring
         # "caution" one; otherwise the AI review would just be decoration.
         _VERDICT_RANK = {"take": 0, "caution": 1}
-        for rows in by_strat.values():
+        # Diversity cap: one underlying's ten strike-variants must not flood the whole
+        # list (they're near-duplicates of the same market view, and correlated risk).
+        # Keep at most 2 per underlying; the rest of the slots go to the next names.
+        _MAX_PER_UNDERLYING = 2
+        for strat, rows in by_strat.items():
             rows.sort(key=lambda d: (_VERDICT_RANK.get(d["verdict"], 9), -d["score"]))
+            counts: dict[str, int] = {}
+            diversified = []
+            for d in rows:
+                u = d["underlying"]
+                if counts.get(u, 0) >= _MAX_PER_UNDERLYING:
+                    continue
+                counts[u] = counts.get(u, 0) + 1
+                diversified.append(d)
+            by_strat[strat] = diversified
 
         groups = [{"strategy": s, "trades": by_strat.get(s, [])[:n]}
                   for s in FOCUS_STRATEGIES if s in by_strat]

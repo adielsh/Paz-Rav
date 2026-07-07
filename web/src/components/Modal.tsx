@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { IconInfo, IconX } from "./Icon";
 
-/** Accessible modal: scrim (dismiss on click/Escape), focus trap-ish (focus the panel),
- * spring-in animation, RTL body. Used for progressive disclosure — heavy detail lives here
- * behind an info button instead of cluttering the card. */
+/** Accessible modal: scrim (dismiss on click/Escape), focus the panel on open, spring-in
+ * animation, RTL body. Rendered through a PORTAL to document.body — a `position: fixed`
+ * element inside a transformed ancestor (e.g. a card with a hover translate) is positioned
+ * relative to that ancestor, not the viewport, which traps and clips the modal inside the
+ * card. The portal escapes the card's DOM entirely. */
 export function Modal({
   open,
   onClose,
@@ -19,11 +22,17 @@ export function Modal({
   children: ReactNode;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
+  // Keep the latest onClose in a ref so the open-effect depends ONLY on `open` — an inline
+  // `onClose` prop is a new function every parent render (and scans re-render the list every
+  // few seconds), which used to re-run the effect: re-focusing the panel and re-locking the
+  // body over and over — the "stuck and flickering" bug.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onCloseRef.current();
     };
     document.addEventListener("keydown", onKey);
     const prevOverflow = document.body.style.overflow;
@@ -33,16 +42,19 @@ export function Modal({
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-label={title}
+      // never let clicks/keys bubble into whatever the trigger was nested in (cards etc.)
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
     >
       {/* scrim: strong enough (≈55%) to isolate the foreground */}
       <div
@@ -70,7 +82,8 @@ export function Modal({
         </div>
         <div className="px-5 py-4">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -92,7 +105,10 @@ export function InfoButton({
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={(e) => {
+          e.stopPropagation(); // don't select/activate the card the button sits on
+          setOpen(true);
+        }}
         aria-label={label}
         title={label}
         className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-line text-ink-3 hover:text-primary hover:border-primary/50 hover:bg-primary/5"
