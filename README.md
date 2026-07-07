@@ -38,6 +38,7 @@ flowchart LR
     subgraph CLOSE["advisor-service · own container"]
         CA["Close-timing debate<br/>Analyst → Critic → Decider<br/>3 LLMs on LangGraph"]
     end
+    REFLECT["Reflection agent<br/>reviews all closed trades<br/>→ tuning advice"]
     subgraph Store["Storage"]
         REDIS[("Redis<br/>hot state")]
         PG[("Postgres + pgvector<br/>candidates · positions · case memory")]
@@ -56,6 +57,8 @@ flowchart LR
     POSITIONS --> PG
     POSITIONS --> CA
     PG -.recall similar closed trades.-> CA
+    PG --> REFLECT
+    REFLECT -.-> LF
     ANALYST -.-> LF
     CRITIC -.-> LF
     POSITIONS -.-> LF
@@ -65,7 +68,7 @@ flowchart LR
     API <--> WEB
 
     classDef llm fill:#efeaff,stroke:#7c4dff,color:#231a4d;
-    class CA llm;
+    class CA,REFLECT llm;
     style CLOSE fill:#f7f4ff,stroke:#7c4dff;
 ```
 
@@ -219,6 +222,36 @@ the same really are close together in the book. The models still only ever reaso
 numbers — now including how past trades ended. It's honest about its limits too: with an
 empty book, the debate just runs without memory, and it fills up as you trade.
 
+## The coach who reviews the whole season 🏅
+
+Everything above decides about *one* trade. The **reflection agent** is different: like a
+coach watching game film after the season, it looks back over **all** your closed trades and
+asks *"what's working, and what should we change?"* — then suggests tuning (advisory only, it
+never changes settings itself).
+
+```mermaid
+flowchart LR
+    HIST[("🗄️ all closed trades")] --> STATS["📐 Python counts the score<br/>win rate · avg P&L · per strategy"]
+    STATS --> COACH["🧑‍🏫 the coach (LLM)<br/>reads the scoreboard,<br/>spots patterns"]
+    PAST["📓 its own past reviews"] --> COACH
+    COACH --> OUT["💡 'DACS keeps losing in low RSI —<br/>consider tightening entry'<br/>(advice, not auto-applied)"]
+    COACH --> PAST
+
+    classDef store fill:#e2f5ee,stroke:#12a37f,color:#093;
+    classDef code fill:#e7f0fe,stroke:#2e7df6,color:#123;
+    classDef llm fill:#efeaff,stroke:#7c4dff,color:#231a4d;
+    classDef out fill:#fff3d6,stroke:#e0a020,color:#5a3d00;
+    class HIST,PAST store;
+    class STATS code;
+    class COACH llm;
+    class OUT out;
+```
+
+Why it scales to thousands of trades: the coach **never reads the raw game film** — Python
+hands it a compact scoreboard (the same size whether you've made 10 trades or 10,000) plus a
+short window of its own recent reviews. And it's honest — under a minimum number of trades it
+says *"not enough data yet"* instead of inventing patterns from noise.
+
 ## Quick start
 
 ```bash
@@ -239,6 +272,7 @@ options (running from source, real persistence, cloud deployment) are in
 | 2 | Two-agent AI judgment (Analyst + Critic, LangGraph, Langfuse) | ✅ done |
 | 3 | Position lifecycle + advisory exit alerts | ✅ done |
 | 3.5 | **Close-timing debate — 3 real LLMs (Analyst/Critic/Decider) on LangGraph**, extracted as its own `advisor` microservice, with **pgvector case memory** (recall similar closed trades) | ✅ done |
+| 3.6 | **Strategic reflection agent** — looks back over all closed trades, recommends tuning (advisory) | ✅ done |
 | 4 | Real broker connection, hardening | ⏳ not started |
 
 Details, what's proven vs. what's a known gap, and backtest results:

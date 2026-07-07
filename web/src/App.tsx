@@ -4,13 +4,14 @@ import Suggestions from "./components/Suggestions";
 import TradeDetails from "./components/TradeDetails";
 import DacsGuide from "./components/DacsGuide";
 import Positions from "./components/Positions";
+import ReflectionPanel from "./components/Reflection";
 import AmbientBackground from "./components/AmbientBackground";
 import KpiStrip from "./components/KpiStrip";
 import { SignedInBar } from "./AuthGate";
 import { authedFetch } from "./api";
 import { currentIdToken } from "./auth";
 import { strategyColor, strategyLabel } from "./lib";
-import type { Candidate, CloseAdvice, PayoffPoint, Position, Review } from "./types";
+import type { Candidate, CloseAdvice, PayoffPoint, Position, Reflection, Review } from "./types";
 
 interface Group {
   strategy: string;
@@ -85,6 +86,15 @@ export default function App({ user }: { user: User | null }) {
       method: force ? "POST" : "GET",
     });
     if (!r.ok) throw new Error("advice failed");
+    return r.json();
+  };
+
+  const loadReflection = async (): Promise<Reflection> =>
+    authedFetch("/api/reflection").then((r) => r.json());
+
+  const runReflection = async (): Promise<Reflection> => {
+    const r = await authedFetch("/api/reflection", { method: "POST" });
+    if (!r.ok) throw new Error("reflection failed");
     return r.json();
   };
 
@@ -220,6 +230,10 @@ export default function App({ user }: { user: User | null }) {
 
       <section className="mt-6">
         <Positions positions={positions} onClose={closePosition} onAdvice={advisePosition} />
+      </section>
+
+      <section className="mt-6">
+        <ReflectionPanel loadLatest={loadReflection} runNew={runReflection} />
       </section>
 
       <section className="mt-6">

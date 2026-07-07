@@ -139,6 +139,34 @@ It degrades gracefully at every layer: no pgvector extension → falls back to a
 cosine scan; no closed cases yet → the debate simply runs without recall. Honest by
 design: case memory only helps once there's a real body of outcomes to retrieve against.
 
+## Strategic reflection — the system analyzing itself
+
+Every other AI touchpoint reasons about *one position, now*. The reflection agent
+(`agents/reflection.py`) steps back over the *whole* history and asks: what is the system
+doing well, and what should be tuned? It reads the accumulated closed trades, finds
+patterns, and recommends parameter adjustments — **advisory only, never self-tuning**.
+
+Same spine as everything else:
+
+- **Deterministic aggregation first.** `aggregate_stats()` computes every statistic in
+  Python — win rate / avg P&L per strategy, close-reason distribution, per-underlying
+  buckets. The LLM only *interprets* that compact summary; it never computes a stat.
+- **Bounded, so it scales.** The model never sees raw rows — only the aggregates (fixed
+  size no matter how much history) plus a short window of recent past reflections. That's
+  what lets it work at 10 or 10,000 closed trades without blowing the context. When
+  reflections themselves grow large, the recency window becomes a pgvector similarity
+  retrieval — the same RAG pattern as case memory, second instance.
+- **Minimum sample size.** Below `MIN_SAMPLE` closed trades it returns an honest "not
+  enough data yet" instead of pattern-matching on noise.
+- **It remembers its own past.** Each reflection is a first-class domain object persisted
+  via `ReflectionRepository` (Postgres) and fed back into the next run for continuity.
+
+**Postgres vs. Langfuse here, deliberately both:** the reflection is *stored* in Postgres
+because it's app state the product reads back and reuses (the filing cabinet — the document
+you retrieve and act on). The reflection *run* is also *traced* to Langfuse (the security
+camera — an observability copy of the LLM call: prompt, output, cost). You don't retrieve
+business documents from security-camera footage; the two stores answer different questions.
+
 ## Concurrency model
 
 | Work | Worker | Why |

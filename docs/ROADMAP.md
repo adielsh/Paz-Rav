@@ -31,9 +31,17 @@ verified live against real API keys.
   leans on your own history. The vector is computed from the quant core's numbers, not an
   LLM embedding — the deterministic line holds.
 
+**Phase 3.6 — Strategic reflection agent.** ✅ Done.
+- Steps back over the *whole* closed-trade history and asks what the system is doing well
+  and what to tune. Deterministic aggregates (win rate / avg P&L per strategy, close-reason
+  distribution) computed in Python — the LLM only interprets them, never computes a stat.
+- Bounded by design (the model sees fixed-size aggregates + a window of recent reflections,
+  never raw rows), gated by a minimum sample size, and it remembers its own past
+  reflections (Postgres) for continuity. Advisory only — never self-tunes.
+
 **Not yet built:**
-- A strategic reflection agent that mines accumulated Langfuse/DB statistics to recommend
-  parameter tuning — deferred until there's a large enough body of outcomes to be honest.
+- pgvector retrieval over *reflections* (the RAG pattern's third instance) — only once
+  enough reflections accumulate that a recency window stops being enough.
 - A real IBKR connection — stubbed (`adapters/ibkr.py`) but not wired; not needed until
   real-time watching or order placement is required.
 - Cloud deployment — Terraform scaffold exists, nothing applied.

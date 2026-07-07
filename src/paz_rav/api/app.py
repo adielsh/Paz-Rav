@@ -31,6 +31,7 @@ from paz_rav.positions import InMemoryPositionRepository, Position
 from paz_rav.positions.exit_rules import mark_to_market
 from paz_rav.scheduler import Scheduler
 from paz_rav.store.case_memory import InMemoryCaseMemory, case_from_position
+from paz_rav.store.reflection_repo import InMemoryReflectionRepository
 from paz_rav.store.memory import (
     InMemoryCandidateRepository,
     InMemoryFeatureStore,
@@ -70,8 +71,10 @@ async def _build_real_stores(settings):
     except Exception:
         log.warning("pgvector unavailable — using in-memory case memory")
         case_memory = InMemoryCaseMemory()
+    from paz_rav.store.reflection_repo import PostgresReflectionRepository
+    reflection_repo = await PostgresReflectionRepository.connect(settings.database_url)
     return (RedisFeatureStore(r), RedisIVHistory(r), RedisBus(r), candidate_repo,
-            position_repo, access_repo, case_memory)
+            position_repo, access_repo, case_memory, reflection_repo)
 
 
 def create_app(
@@ -114,16 +117,17 @@ def create_app(
     position_repo = InMemoryPositionRepository()
     access_repo = InMemoryAccessRequestRepository()
     case_memory = InMemoryCaseMemory()
+    reflection_repo = InMemoryReflectionRepository()
     pipeline = Pipeline(feed, feature_store, iv_history, candidate_repo, bus, config,
                         strategies=FOCUS_STRATEGIES, position_repo=position_repo)
     scheduler = Scheduler(pipeline, underlyings, interval=interval, today=today)
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        nonlocal feature_store, iv_history, bus, candidate_repo, position_repo, access_repo, case_memory, pipeline, scheduler
+        nonlocal feature_store, iv_history, bus, candidate_repo, position_repo, access_repo, case_memory, reflection_repo, pipeline, scheduler
         if settings.paz_persist == "redis_postgres":
-            (feature_store, iv_history, bus, candidate_repo,
-             position_repo, access_repo, case_memory) = await _build_real_stores(settings)
+            (feature_store, iv_history, bus, candidate_repo, position_repo, access_repo,
+             case_memory, reflection_repo) = await _build_real_stores(settings)
             pipeline = Pipeline(feed, feature_store, iv_history, candidate_repo, bus, config,
                                 strategies=FOCUS_STRATEGIES, position_repo=position_repo)
             scheduler = Scheduler(pipeline, underlyings, interval=interval, today=today)
@@ -414,6 +418,31 @@ def create_app(
         if advice is None:
             return {"error": "no advice (position closed or no market data)"}
         return advice
+
+    @app.get("/api/reflection")
+    async def api_reflection_latest() -> dict:
+        """The most recent strategic reflection (or an empty shell if none run yet)."""
+        from paz_rav.agents.reflection import reflection_to_dict
+
+        rows = await reflection_repo.recent(1)
+        return reflection_to_dict(rows[0]) if rows else {"summary": "", "recommendations": [],
+                                                         "enough_data": False, "sample_size": 0}
+
+    @app.post("/api/reflection")
+    async def api_reflection_run() -> dict:
+        """Run the strategic reflection agent now over the whole closed-trade history.
+
+        Deterministic aggregates are computed in Python (bounded size regardless of how much
+        history there is); the agent only interprets them, handed its own recent reflections
+        for continuity. Advisory only — it never tunes anything. Persisted so the next run
+        can build on it."""
+        from paz_rav.agents.reflection import reflect, reflection_to_dict
+
+        closed = [p for p in await position_repo.list_all() if p.status == "closed"]
+        past = await reflection_repo.recent(3)
+        reflection = await reflect(closed, past=past, settings=get_settings())
+        await reflection_repo.save(reflection)
+        return reflection_to_dict(reflection)
 
     @app.websocket("/ws")
     async def ws(websocket: WebSocket) -> None:

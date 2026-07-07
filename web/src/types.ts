@@ -79,6 +79,16 @@ export interface RecalledCase {
   realized_pnl: number;
 }
 
+export interface Reflection {
+  created_at?: string;
+  sample_size: number;
+  stats?: Record<string, unknown>;
+  summary: string;
+  recommendations: string[];
+  engine?: "llm" | "deterministic";
+  enough_data: boolean;
+}
+
 export interface Position {
   id: string;
   underlying: string;
