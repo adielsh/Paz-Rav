@@ -460,6 +460,45 @@ def _maybe_trace(position: Position, sit: Situation, result: dict) -> None:
         pass
 
 
+async def _debate_remote(sit: Situation, settings) -> dict:
+    """Call the extracted advisor microservice over HTTP (paz_rav/services/advisor)."""
+    import httpx
+
+    url = settings.advisor_url.rstrip("/") + "/advise"
+    async with httpx.AsyncClient(timeout=settings.advisor_timeout) as client:
+        resp = await client.post(url, json={"situation": asdict(sit)})
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def _resolve_debate(sit: Situation, settings) -> dict:
+    """Pick where the debate runs, most-specific first, each degrading to the next:
+    remote advisor service -> in-process LLM debate -> deterministic rule-based debate.
+
+    The remote path is a small circuit breaker: any failure (service down, timeout, 5xx)
+    falls back to running the debate in-process, so a broken advisor never takes the
+    dashboard down with it. This is exactly the seam that lets the LLM layer be extracted
+    to its own deployable (docs/ARCHITECTURE.md) without the monolith depending on it.
+    """
+    if settings.advisor_url:
+        try:
+            r = await _debate_remote(sit, settings)
+            r.setdefault("served_by", "advisor-service")
+            return r
+        except Exception:
+            pass   # circuit breaker -> run it here instead
+    if settings.anthropic_api_key:
+        try:
+            r = await _debate_llm(sit, settings)
+            r["engine"] = "llm"
+            return r
+        except Exception:
+            pass
+    r = _debate_fallback(sit)
+    r["engine"] = "deterministic"
+    return r
+
+
 async def advise(position: Position, *, spot: float, today: date, feature=None,
                  recent_closes: list[float] | None = None, force: bool = False,
                  cfg: ExitConfig | None = None) -> dict:
@@ -479,17 +518,7 @@ async def advise(position: Position, *, spot: float, today: date, feature=None,
         return cached
 
     settings = get_settings()
-    if settings.anthropic_api_key:
-        try:
-            result = await _debate_llm(sit, settings)
-            result["engine"] = "llm"
-        except Exception:
-            result = _debate_fallback(sit)
-            result["engine"] = "deterministic"
-    else:
-        result = _debate_fallback(sit)
-        result["engine"] = "deterministic"
-
+    result = await _resolve_debate(sit, settings)
     result["situation"] = asdict(sit)
     result["computed_at"] = datetime.now(timezone.utc).isoformat()
     result["_sig"] = sig

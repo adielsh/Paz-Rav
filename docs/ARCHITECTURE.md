@@ -34,13 +34,32 @@ pure ops cost with no benefit.
 
 **Extract only on a real trigger:**
 
-| Extract | Trigger |
-|---|---|
-| Real-time engine (feed + analytics) | Must never drop a tick / be disturbed by a UI restart or slow AI call |
-| API / web server | Want to redeploy the dashboard without touching the trading engine |
-| Committee (LLM agents) | Agent calls are slow/expensive; want to scale independently |
+| Extract | Trigger | Status |
+|---|---|---|
+| **Advisor (close-timing debate)** | Slow, LLM-bound; scales differently from the tick loop | ✅ **extracted** — `services/advisor`, own container |
+| Real-time engine (feed + analytics) | Must never drop a tick / be disturbed by a UI restart or slow AI call | in-process |
+| API / web server | Want to redeploy the dashboard without touching the trading engine | in-process |
 
 At most three deployables, only when the pain is real.
+
+### The one service actually extracted: `advisor`
+
+The close-timing debate is the first (and, for now, only) module pulled out to its own
+deployable — because it hit a real trigger: it's slow and LLM-bound, so it scales
+differently from everything else, and the cut is *clean* because it was already a pure
+function of a deterministic `Situation` the monolith computes. It holds no state and
+touches no database.
+
+- **Same image, different entrypoint** — `uvicorn paz_rav.services.advisor.app:app` on
+  port 8001; a separate `advisor` service in `docker-compose.yml`.
+- **Contract** — `POST /advise {"situation": {...}}` → the debate result. That's the
+  whole API surface.
+- **Loosely coupled, never a hard dependency** — the monolith calls it over HTTP only
+  when `ADVISOR_URL` is set, and `agents/close_advisor._resolve_debate()` is a small
+  circuit breaker: remote → (on any failure) in-process LLM debate → deterministic
+  fallback. A down advisor never takes the dashboard with it. Leave `ADVISOR_URL` empty
+  and the exact same debate runs in-process — extraction is a config flip, not a rewrite,
+  which is the whole point of the modular-monolith boundaries.
 
 ## Why exactly two agents
 
@@ -143,6 +162,7 @@ Paz-Rav/
     builder/      annotate + enumerate + rank
     agents/       analyst · critic · graph · explainer     the two-agent loop (LangGraph)
     positions/    base + exit_rules + exit_manager         advisory-only lifecycle
+    services/     advisor/ — close-timing debate           the one extracted microservice
     store/        base + memory/redis/postgres             Repository
     bus/          channels for live push                   Observer
     contracts/    shared Pydantic schemas

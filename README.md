@@ -35,8 +35,8 @@ flowchart LR
         CRITIC["Critic"]
         EXPLAINER["Explainer<br/>(Claude)"]
     end
-    subgraph CLOSE["Close-timing debate — 3 real LLMs on LangGraph"]
-        CA["Analyst → Critic → Decider<br/>(conditional revision loop)"]
+    subgraph CLOSE["advisor-service · own container"]
+        CA["Close-timing debate<br/>Analyst → Critic → Decider<br/>3 LLMs on LangGraph"]
     end
     subgraph Store["Storage"]
         REDIS[("Redis<br/>hot state")]
@@ -149,6 +149,41 @@ flowchart TB
 fill happens at your broker. Repeated dashboard refreshes are served from a cache keyed on
 the market state, so the debate only re-runs when something material changes (or you click
 "check now").
+
+## One room moved to its own house 🏠➡️🏠
+
+The whole app is **one house with many rooms** (a *modular monolith*) — simple to run, no
+running between buildings. But the "when should I close?" debate is **slow and expensive**
+(three LLM calls), so it earned its own house next door: the **advisor-service**, a separate
+container. The main house sends it the already-computed numbers and gets back the verdict.
+
+```mermaid
+flowchart LR
+    subgraph APP["🏠 main app (monolith)"]
+        NUMS["📐 compute the numbers<br/>(Situation)"]
+    end
+    subgraph ADV["🏠 advisor-service · own container"]
+        DEBATE["🧠 Analyst → Critic → Decider<br/>3 LLMs on LangGraph"]
+    end
+    FB["🛟 fallback:<br/>run the debate at home<br/>if the advisor is down"]
+    NUMS -->|POST /advise| DEBATE
+    DEBATE -->|hold / close / reduce| NUMS
+    NUMS -.->|advisor unreachable| FB
+
+    classDef house fill:#e7f0fe,stroke:#2e7df6,color:#123;
+    classDef llm fill:#efeaff,stroke:#7c4dff,color:#231a4d;
+    classDef fb fill:#e2f5ee,stroke:#12a37f,color:#093;
+    class NUMS house;
+    class DEBATE llm;
+    class FB fb;
+```
+
+Why this is the *right* room to move out: it was already a **pure function** of the numbers
+(no database, no state), so the wall between the houses was easy to draw. And it's **loosely
+coupled** — if the advisor house is closed, the main house just does the debate itself (a
+built-in fallback). Flip one setting (`ADVISOR_URL`) and it runs in-process again — moving
+out is a *config change, not a rewrite*, which is the whole point of building to strict
+module boundaries.
 
 ## Quick start
 

@@ -104,3 +104,52 @@ def test_debate_graph_compiles_with_analyst_critic_decider_and_loop():
     # the conditional edge back to the analyst is what makes this a loop, not a line
     assert ca._g_route({"loop": True}) == "analyst"
     assert ca._g_route({"loop": False}) == "done"
+
+
+# ---- The extracted advisor microservice ----
+
+def test_advisor_service_advise_endpoint_returns_debate():
+    from dataclasses import asdict
+
+    from fastapi.testclient import TestClient
+
+    from paz_rav.agents.close_advisor import build_situation
+    from paz_rav.services.advisor.app import app
+
+    sit = build_situation(_position(), spot=6000.0, today=TODAY, feature=_feature())
+    with TestClient(app) as client:
+        r = client.post("/advise", json={"situation": asdict(sit)})
+        assert r.status_code == 200
+        d = r.json()
+        assert d["decision"] in ("hold", "close", "reduce")
+        assert d["served_by"] == "advisor-service"
+        assert d["engine"] == "deterministic"        # no API key in tests
+        assert d["analyst"]["reasons"] and d["critic"]["reasons"]
+
+
+def test_resolve_debate_prefers_remote_and_circuit_breaks(monkeypatch):
+    """advisor_url set -> use the service; if it errors, fall back in-process (never down)."""
+    import types
+
+    from paz_rav.agents import close_advisor as ca
+
+    sit = ca.build_situation(_position(), spot=6000.0, today=TODAY, feature=_feature())
+    fake = types.SimpleNamespace(advisor_url="http://advisor:8001",
+                                 anthropic_api_key="", advisor_timeout=5.0)
+
+    async def ok_remote(_sit, _settings):
+        return {"decision": "hold", "confidence": 0.9, "rationale": "from service",
+                "analyst": {"stance": "hold", "reasons": ["x"]},
+                "critic": {"stance": "close", "reasons": ["y"]}, "engine": "llm"}
+
+    monkeypatch.setattr(ca, "_debate_remote", ok_remote)
+    out = asyncio.run(ca._resolve_debate(sit, fake))
+    assert out["served_by"] == "advisor-service" and out["decision"] == "hold"
+
+    async def boom_remote(_sit, _settings):
+        raise RuntimeError("advisor down")
+
+    monkeypatch.setattr(ca, "_debate_remote", boom_remote)
+    out2 = asyncio.run(ca._resolve_debate(sit, fake))   # circuit breaker kicks in
+    assert out2["engine"] == "deterministic"            # ran in-process instead
+    assert "served_by" not in out2

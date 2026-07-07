@@ -7,8 +7,12 @@ docker compose up -d --build
 # → open http://localhost:8000
 ```
 
-Builds the dashboard, starts Postgres + Redis + the engine together, healthchecked — no
-host Python or Node needed, and it's the same image that deploys to the cloud later.
+Builds the dashboard, starts Postgres + Redis + the **advisor microservice** + the engine
+together, healthchecked — no host Python or Node needed, and it's the same image that
+deploys to the cloud later. (The `advisor` container runs the close-timing LLM debate on
+its own; the app calls it via `ADVISOR_URL` and falls back in-process if it's down. Drop
+the service and clear `ADVISOR_URL` to run everything as a single process — see
+[`docs/ARCHITECTURE.md`](ARCHITECTURE.md#the-one-service-actually-extracted-advisor).)
 Defaults to `PAZ_DATA=fixture` (offline demo); set `PAZ_DATA=yfinance` for live delayed
 quotes. Rebuild after a change: `docker compose up -d --build app`.
 

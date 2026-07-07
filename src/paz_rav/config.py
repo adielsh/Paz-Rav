@@ -26,6 +26,15 @@ class Settings(BaseSettings):
     langfuse_secret_key: str = ""
     langfuse_host: str = "https://cloud.langfuse.com"
 
+    # ---- advisor microservice (optional extraction of the close-timing debate) ----
+    # Empty -> the monolith runs the Analyst/Critic/Decider debate in-process (default).
+    # Set e.g. http://advisor:8001 to offload the (slow, LLM-bound) debate to a separate
+    # deployable that scales on its own; the monolith calls it over HTTP and falls back to
+    # the in-process debate if it's unreachable (a small circuit breaker). See
+    # paz_rav/services/advisor/app.py.
+    advisor_url: str = ""
+    advisor_timeout: float = 30.0
+
     # runtime
     paz_env: str = "local"
     log_level: str = "INFO"
