@@ -73,6 +73,35 @@ def test_wings_are_equal_width_on_an_asymmetric_strike_grid():
     assert c.width == pytest.approx(20.0)
 
 
+def test_degenerate_deltas_produce_no_candidate():
+    """Closed-market/stale chains collapse every delta toward 0. The 'closest to 16Δ'
+    short is then 0.0002Δ with POP ~1.0 — fake free money that flooded the rankings.
+    With no honest strike near the target delta, there must be NO candidate at all."""
+    strat = make_strategy("iron_condor")
+    chain = [
+        aq("put", 85, -0.0002, 0.20),
+        aq("put", 90, -0.0004, 0.50),
+        aq("put", 95, -0.0008, 1.20),
+        aq("call", 105, 0.0008, 1.20),
+        aq("call", 110, 0.0004, 0.50),
+        aq("call", 115, 0.0002, 0.20),
+    ]
+    cfg = BuildConfig(short_deltas=(16.0,), wing_strikes=(1,))
+    assert strat.enumerate(underlying="TST", spot=100.0, chain=chain,
+                           config=cfg, today=TODAY, ctx=CTX) == []
+
+
+def test_annotate_drops_quotes_with_insane_solved_iv():
+    """A mid so far from any sane price that the IV solver lands below the floor means the
+    quote is broken (stale last / one-sided book) — it must not enter the chain at all."""
+    # deep-OTM put priced at nearly the strike itself, and no vendor IV: the solver can't
+    # price it (unpriceable = broken quote) — it must be dropped, not given a made-up vol
+    broken = _quote("put", 60.0)
+    broken = broken.model_copy(update={"bid": 55.0, "ask": 56.0, "implied_vol": None})
+    ann = annotate([broken], spot=100.0, config=BuildConfig(), today=TODAY)
+    assert ann == []
+
+
 def test_liquidity_filter_never_uses_an_illiquid_leg():
     """An illiquid strike must never appear in a candidate. The enumerator may still build
     a condor from the next liquid width available on BOTH sides (here 10-wide via 85/115),

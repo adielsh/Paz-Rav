@@ -97,7 +97,7 @@ def create_app(
     config = config or BuildConfig(
         target_dte=settings.condor_target_dte,
         short_deltas=(16.0, 25.0), wing_widths=(5.0, 10.0),
-        min_open_interest=10, max_rel_spread=0.6, top_n=6, vrp=settings.vrp,
+        min_open_interest=10, max_rel_spread=0.6, top_n=10, vrp=settings.vrp,
         dacs_short_dte=settings.dacs_short_dte, dacs_gap_days=settings.dacs_gap_days,
         dacs_otm=settings.dacs_otm, dacs_max_delta=settings.dacs_max_delta,
         dacs_min_long_price=settings.dacs_min_long_price,

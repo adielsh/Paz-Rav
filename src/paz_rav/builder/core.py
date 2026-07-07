@@ -37,7 +37,13 @@ def annotate(
             continue
         dte = max((q.expiry - today).days, 0)
         t = max(dte, 1) / 365.0
-        iv = contract_iv(q, spot, config.r, today) or iv_fallback
+        # No vendor IV and the solver can't price it either -> the quote is broken (stale
+        # last, one-sided book); inventing a fallback vol here is how garbage used to enter
+        # the chain. Same for a solved IV outside the sane band: greeks/POP computed from
+        # it would be fiction (deltas ~0, POP ~1.0), so the quote is dropped, not "fixed".
+        iv = contract_iv(q, spot, config.r, today)
+        if iv is None or not (config.min_iv <= iv <= config.max_iv):
+            continue
         try:
             delta = greeks(spot, q.strike, t, config.r, iv, q.right).delta
         except ValueError:

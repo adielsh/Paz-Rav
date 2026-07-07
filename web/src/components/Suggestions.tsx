@@ -2,9 +2,49 @@ import { useState, type KeyboardEvent, type MouseEvent } from "react";
 import type { Candidate } from "../types";
 import { useThemeColors } from "../theme-context";
 import { frontExpiry, num, strategyColor, strategyLabel } from "../lib";
-import { pct, usdContractSigned, usdStrike } from "../format";
+import { pct, usdContract, usdContractSigned, usdStrike } from "../format";
 import LegLadder from "./LegLadder";
+import { InfoButton } from "./Modal";
 import { IconCheckCircle, IconClock } from "./Icon";
+
+/** The expanded card detail — legs + every figure — shown in a modal via the info button
+ * so the card list itself stays scannable even at 10 candidates per strategy. */
+function CandidateInfo({ c }: { c: Candidate }) {
+  const dacs = c.strategy === "dacs";
+  const rows: [string, string][] = dacs
+    ? [
+        ["עלות (debit)", usdContract(num(c.meta, "long_debit") ?? Math.abs(c.credit))],
+        ["Fast Ratio", pct(num(c.meta, "fast_ratio") ?? 0)],
+        ["הפסד מקס", usdContract(c.max_loss)],
+        ["סטופ (שמרני)", usdStrike(num(c.meta, "stop_conservative"))],
+        ["סטופ (אגרסיבי)", usdStrike(num(c.meta, "stop_aggressive"))],
+        ["short OTM", `${num(c.meta, "otm_pct") ?? "—"}%`],
+      ]
+    : [
+        ["קרדיט", usdContract(c.credit)],
+        ["רווח מקס", usdContract(c.max_profit)],
+        ["הפסד מקס", usdContract(c.max_loss)],
+        ["POP", pct(c.pop)],
+        ["נק' איזון", c.breakevens.map((b) => usdStrike(b)).join(" / ")],
+        ["רוחב כנף", usdStrike(c.width)],
+      ];
+  return (
+    <div className="space-y-3" dir="rtl">
+      <LegLadder legs={c.legs} />
+      <div className="grid grid-cols-2 gap-2">
+        {rows.map(([label, value]) => (
+          <div key={label} className="rounded-lg bg-panel2 border border-line px-3 py-2">
+            <div className="text-2xs uppercase tracking-wider text-ink-3 font-mono">{label}</div>
+            <div className="font-mono text-sm font-semibold tabular-nums mt-0.5 text-ink">{value}</div>
+          </div>
+        ))}
+      </div>
+      <p className="text-[11px] text-ink-3 font-mono">
+        פקיעה: {frontExpiry(c)} · DTE {c.dte} · כל הסכומים לחוזה (×100)
+      </p>
+    </div>
+  );
+}
 
 const VERDICT_LABEL: Record<string, string> = { take: "לפתוח", caution: "בזהירות", pass: "לוותר" };
 
@@ -157,11 +197,9 @@ export default function Suggestions({
               )}
             </div>
 
-            <LegLadder legs={c.legs} />
-
-            <div className="flex items-center justify-between mt-3 gap-3">
-              <div className="flex items-center gap-3">
-                <span className="inline-flex items-center gap-1 text-[11px] font-mono text-ink-3">
+            <div className="flex items-center justify-between mt-1 gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="inline-flex items-center gap-1 text-[11px] font-mono text-ink-3 shrink-0">
                   <IconClock width={12} height={12} />
                   {frontExpiry(c)}
                 </span>
@@ -181,7 +219,16 @@ export default function Suggestions({
                   />
                 )}
               </div>
-              <OpenButton onOpen={() => onOpenPosition(c)} />
+              <div
+                className="flex items-center gap-2 shrink-0"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+              >
+                <InfoButton title={`${c.underlying} · ${strategyLabel(c.strategy)} — כל הפרטים`} label="כל הפרטים">
+                  <CandidateInfo c={c} />
+                </InfoButton>
+                <OpenButton onOpen={() => onOpenPosition(c)} />
+              </div>
             </div>
           </div>
         );

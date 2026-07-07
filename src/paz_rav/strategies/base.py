@@ -104,6 +104,14 @@ class BuildConfig:
     r: float = 0.04
     top_n: int = 10
     vrp: float = 0.0                            # volatility risk premium (realized = iv*(1-vrp))
+    # ---- data-quality gates (garbage in -> no candidate out, never a fake one) ----
+    # Stale/one-sided quotes (market closed, zero bids) make the IV solver converge to
+    # nonsense (3% vol), which turns deltas to ~0 and POP to ~1.0 — and then one random
+    # name floods the top list. These gates reject that data instead of trading on it.
+    min_iv: float = 0.04                        # solved IV below this = broken quote
+    max_iv: float = 4.00                        # ...and above this too
+    short_delta_tolerance: float = 0.08         # picked short must be within this of target
+    max_pop: float = 0.98                       # POP ~1.0 = degenerate pricing, not free money
     # ---- DACS knobs ----
     dacs_short_dte: int = 35                     # sell ~1 month out
     dacs_gap_days: int = 30                      # buy ~1 month beyond the short

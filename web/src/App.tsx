@@ -23,8 +23,8 @@ interface Group {
 
 const VIEW_META: Record<ViewId, { title: string; subtitle: string }> = {
   dashboard: { title: "לוח מסחר", subtitle: "מבט-על · פוזיציות · התראות" },
-  condor: { title: "Iron Condor", subtitle: "מכירת פרמיה בסיכון מוגדר — top 5" },
-  dacs: { title: "DACS 1.0", subtitle: "קלנדר דיאגונלי אדפטיבי — top 5" },
+  condor: { title: "Iron Condor", subtitle: "מכירת פרמיה בסיכון מוגדר — top 10" },
+  dacs: { title: "DACS 1.0", subtitle: "קלנדר דיאגונלי אדפטיבי — top 10" },
   insights: { title: "תובנות אסטרטגיה", subtitle: "רפלקציה על העסקאות שנסגרו" },
   dacsGuide: { title: "מדריך DACS 1.0", subtitle: "האסטרטגיה, שלב אחר שלב" },
   how: { title: "איך המערכת בנויה", subtitle: "ארכיטקטורה · שכבת ה-AI" },
@@ -93,7 +93,7 @@ export default function App({ user }: { user: User | null }) {
   const [connected, setConnected] = useState(false);
 
   const refreshTop = () =>
-    authedFetch("/api/top?n=5")
+    authedFetch("/api/top?n=10")
       .then((r) => r.json())
       .then((d) => setGroups(d.groups ?? []))
       .catch(() => {});

@@ -89,6 +89,13 @@ class IronCondor:
                      key=lambda q: abs(q.delta - target), default=None)
             if sp is None or sc is None:
                 continue
+            # The nearest strike must actually BE near the target delta. On a broken chain
+            # (stale/one-sided closed-market quotes) every delta collapses toward 0, the
+            # "closest to 16Δ" short ends up at 0.0002Δ, POP looks like ~1.0, and one random
+            # name floods the rankings. No honest short near target -> no trade, full stop.
+            if (abs(abs(sp.delta) - target) > config.short_delta_tolerance
+                    or abs(sc.delta - target) > config.short_delta_tolerance):
+                continue
             if not (liquid(sp) and liquid(sc)):
                 continue
             # Equal-width wings on BOTH sides, by construction. Strike spacing often differs
@@ -128,5 +135,7 @@ class IronCondor:
                 except ValueError:
                     continue
 
+        # POP ~1.0 isn't free money — it's degenerate pricing from bad inputs. Reject it.
+        out = [c for c in out if c.pop <= config.max_pop]
         out.sort(key=lambda c: c.score, reverse=True)
         return out[: config.top_n]
