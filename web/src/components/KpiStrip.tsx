@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { Candidate, Position } from "../types";
 import { useThemeColors } from "../theme-context";
-import { usdSigned } from "../format";
+import { usdContractSigned } from "../format";
 import { IconAlertTriangle } from "./Icon";
 
 interface Group {
@@ -43,7 +43,7 @@ export default function KpiStrip({ groups, positions }: { groups: Group[]; posit
         label="פוזיציות פתוחות"
         value={String(open.length)}
         tone={open.length > 0 ? p.accent : undefined}
-        sub={unrealized !== 0 ? `${usdSigned(unrealized)} לא ממומש` : undefined}
+        sub={unrealized !== 0 ? `${usdContractSigned(unrealized)} לא ממומש` : undefined}
       />
       <Tile
         label="דורש תשומת לב"
@@ -59,7 +59,7 @@ export default function KpiStrip({ groups, positions }: { groups: Group[]; posit
       />
       <Tile
         label="רווח ממומש (סגורות)"
-        value={closed.length > 0 ? usdSigned(realized) : "—"}
+        value={closed.length > 0 ? usdContractSigned(realized) : "—"}
         tone={closed.length > 0 ? (realized >= 0 ? p.good : p.bad) : undefined}
         sub={closed.length > 0 ? `${closed.length} נסגרו` : "טרם נסגרו עסקאות"}
       />

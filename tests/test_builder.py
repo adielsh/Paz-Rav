@@ -47,10 +47,55 @@ def test_enumerate_picks_target_delta_shorts():
     assert 0.0 < c.pop < 1.0
 
 
-def test_liquidity_filter_rejects_wide_legs():
+def test_wings_are_equal_width_on_an_asymmetric_strike_grid():
+    """When the put and call strike grids are spaced differently (as SPX really is), both
+    wings must still come out the SAME dollar width — set by the wider side — so collateral
+    is used efficiently. Regression test for lopsided condors (25-wide vs 100-wide)."""
+    strat = make_strategy("iron_condor")
+    # fine 5-wide grid on the puts, coarse 20-wide on the calls
+    chain = [
+        aq("put", 75, -0.02, 0.20),   # long put candidate 20 out
+        aq("put", 90, -0.05, 0.50),   # only 5 out
+        aq("put", 95, -0.16, 1.20),   # short put
+        aq("put", 98, -0.30, 2.00),
+        aq("call", 105, 0.16, 1.20),  # short call
+        aq("call", 125, 0.03, 0.30),  # long call 20 out (coarse grid)
+    ]
+    cfg = BuildConfig(short_deltas=(16.0,), wing_strikes=(1,))
+    cands = strat.enumerate(underlying="TST", spot=100.0, chain=chain,
+                            config=cfg, today=TODAY, ctx=CTX)
+    assert len(cands) == 1
+    c = cands[0]
+    strikes = sorted(leg.strike for leg in c.legs)
+    put_wing = strikes[1] - strikes[0]
+    call_wing = strikes[3] - strikes[2]
+    assert put_wing == call_wing == 20.0   # widened the 5-wide put side to match the calls
+    assert c.width == pytest.approx(20.0)
+
+
+def test_liquidity_filter_never_uses_an_illiquid_leg():
+    """An illiquid strike must never appear in a candidate. The enumerator may still build
+    a condor from the next liquid width available on BOTH sides (here 10-wide via 85/115),
+    but the 90 put with a 95% spread is untouchable."""
     strat = make_strategy("iron_condor")
     chain = sample_chain()
     chain[1] = aq("put", 90, -0.05, 0.50, spread=0.95)   # illiquid long put
+    cfg = BuildConfig(short_deltas=(16.0,), wing_strikes=(1,), max_rel_spread=0.60)
+    cands = strat.enumerate(underlying="TST", spot=100.0, chain=chain,
+                            config=cfg, today=TODAY, ctx=CTX)
+    for c in cands:
+        assert 90.0 not in {leg.strike for leg in c.legs}
+    # and any condor it did build still has equal wings
+    for c in cands:
+        s = sorted(leg.strike for leg in c.legs)
+        assert s[1] - s[0] == s[3] - s[2]
+
+
+def test_illiquid_short_strike_kills_the_candidate():
+    """If the SHORT itself is illiquid there is no trade at that delta at all."""
+    strat = make_strategy("iron_condor")
+    chain = sample_chain()
+    chain[2] = aq("put", 95, -0.16, 1.20, spread=0.95)   # illiquid short put
     cfg = BuildConfig(short_deltas=(16.0,), wing_strikes=(1,), max_rel_spread=0.60)
     assert strat.enumerate(underlying="TST", spot=100.0, chain=chain,
                            config=cfg, today=TODAY, ctx=CTX) == []

@@ -6,6 +6,7 @@ import DacsGuide from "./components/DacsGuide";
 import Positions from "./components/Positions";
 import ReflectionPanel from "./components/Reflection";
 import HowItWorks from "./components/HowItWorks";
+import AmbientBackground from "./components/AmbientBackground";
 import KpiStrip from "./components/KpiStrip";
 import Sidebar, { type ViewId } from "./components/Sidebar";
 import Topbar from "./components/Topbar";
@@ -116,6 +117,12 @@ export default function App({ user }: { user: User | null }) {
 
   const flat = useMemo(() => groups.flatMap((g) => g.trades), [groups]);
   const current = flat[sel] ?? null;
+  // A STABLE identity for the selected trade. Every WebSocket scan replaces `groups` with a
+  // fresh array, so `current` is a new object reference each tick even when it's the same
+  // trade — keying the fetch effect on the object made the detail panel refetch and blank
+  // (flicker) on every scan. Keying on this string means we only refetch when the *trade*
+  // actually changes, not on each background refresh.
+  const currentKey = current ? `${current.underlying}:${current.u_idx ?? 0}:${current.strategy}` : null;
 
   useEffect(() => {
     if (!current) {
@@ -133,12 +140,14 @@ export default function App({ user }: { user: User | null }) {
       .then((r) => r.json())
       .then((d) => setReview(d))
       .catch(() => setReview(null));
-  }, [current]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentKey]);
 
   const meta = VIEW_META[view];
 
   return (
     <div className="flex min-h-dvh" dir="rtl">
+      <AmbientBackground />
       <Sidebar view={view} onSelect={setView} open={menuOpen} onClose={() => setMenuOpen(false)} />
 
       <main className="flex-1 min-w-0 px-4 sm:px-6 pb-16 max-w-[1400px] mx-auto w-full">

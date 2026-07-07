@@ -122,13 +122,23 @@ score.
 ### The AI layer is intentionally two agents, not a big committee
 `agents/analyst.py` (verdict: take/caution/pass) and `agents/critic.py` (the adversarial
 bear case) are deterministic and rule-based — no LLM call, so they're cheap to test and
-backtest. `agents/explainer.py` is the only place an LLM (Claude, via `ANTHROPIC_API_KEY`)
-is actually called, and only to phrase a plain-language summary — it never decides
-anything. `agents/graph.py` wraps Analyst↔Critic in a real LangGraph loop (a severe Critic
-objection can send a "take" back to the Analyst for one revision) when `langgraph` is
-installed, falling back to a plain sequential call in `committee.py` otherwise — both paths
-return the same shape. Langfuse tracing (`graph.py`'s `_maybe_trace`) is best-effort and
-silently no-ops without `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`.
+backtest. `agents/explainer.py` is also deterministic — a fixed, exact template (it used to
+call Claude Haiku, but a small model writing prose *containing numbers* risks misstating
+them, the one thing this project forbids, so it's a template now). `agents/graph.py` wraps
+Analyst↔Critic in a real LangGraph loop (a severe Critic objection can send a "take" back to
+the Analyst for one revision) when `langgraph` is installed, falling back to a plain
+sequential call in `committee.py` otherwise — both paths return the same shape. **The one
+place real LLMs actually decide is `agents/close_advisor.py`** — the close-timing debate
+(Analyst→Critic→Decider on a LangGraph graph with a conditional revision loop); models only
+weigh already-computed numbers there, never restate them as prose. Langfuse tracing is
+best-effort and silently no-ops without `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`.
+
+**Contract multiplier:** every dollar figure on a `Candidate`/`Position` (credit, max_profit,
+max_loss, realized/unrealized P&L) is **per share**; a US options contract is ×100. The
+frontend `format.ts` (`usdContract`/`usdContractSigned`) and `explainer.py` multiply by 100
+for display — strikes/breakevens are price levels and are NOT multiplied. Iron-condor wings
+are equalized to the same dollar width (the wider side sets the collateral, so the narrower
+side is widened to match) in `strategies/iron_condor.py`.
 
 ### Positions are advisory-only by design
 `positions/exit_manager.sweep()` never closes a position — it only sets `Position.alert`

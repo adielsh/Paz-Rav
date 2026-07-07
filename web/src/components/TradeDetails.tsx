@@ -1,7 +1,7 @@
 import type { Candidate, PayoffPoint, Review } from "../types";
 import { useThemeColors } from "../theme-context";
 import { frontExpiry, num, strategyColor, strategyLabel } from "../lib";
-import { pct, usd, usdStrike } from "../format";
+import { pct, usdContract, usdStrike } from "../format";
 import LegLadder from "./LegLadder";
 import PayoffChart from "./PayoffChart";
 import { InfoButton } from "./Modal";
@@ -110,21 +110,21 @@ export default function TradeDetails({
       <div className="grid grid-cols-3 gap-2 my-4">
         {dacs ? (
           <>
-            <Stat label="debit" value={usd(num(c.meta, "long_debit") ?? Math.abs(c.credit))} tone={p.bad} />
+            <Stat label="עלות (debit)" value={usdContract(num(c.meta, "long_debit") ?? Math.abs(c.credit))} tone={p.bad} />
             <Stat label="fast ratio" value={pct(num(c.meta, "fast_ratio") ?? 0)} tone={p.good} />
-            <Stat label="max loss" value={usd(c.max_loss)} tone={p.bad} />
-            <Stat label="stop (conserv.)" value={usdStrike(num(c.meta, "stop_conservative"))} tone={p.bad} />
-            <Stat label="stop (aggr.)" value={usdStrike(num(c.meta, "stop_aggressive"))} />
+            <Stat label="הפסד מקס" value={usdContract(c.max_loss)} tone={p.bad} />
+            <Stat label="סטופ (שמרני)" value={usdStrike(num(c.meta, "stop_conservative"))} tone={p.bad} />
+            <Stat label="סטופ (אגרסיבי)" value={usdStrike(num(c.meta, "stop_aggressive"))} />
             <Stat label="short OTM" value={`${num(c.meta, "otm_pct") ?? "—"}%`} />
           </>
         ) : (
           <>
-            <Stat label="credit" value={usd(c.credit)} tone={p.good} />
-            <Stat label="max profit" value={usd(c.max_profit)} tone={p.good} />
-            <Stat label="max loss" value={usd(c.max_loss)} tone={p.bad} />
+            <Stat label="קרדיט" value={usdContract(c.credit)} tone={p.good} />
+            <Stat label="רווח מקס" value={usdContract(c.max_profit)} tone={p.good} />
+            <Stat label="הפסד מקס" value={usdContract(c.max_loss)} tone={p.bad} />
             <Stat label="POP" value={pct(c.pop)} />
-            <Stat label="breakevens" value={c.breakevens.map((b) => usdStrike(b)).join(" / ")} />
-            <Stat label="width" value={usdStrike(c.width)} />
+            <Stat label="נק' איזון" value={c.breakevens.map((b) => usdStrike(b)).join(" / ")} />
+            <Stat label="רוחב כנף" value={usdStrike(c.width)} />
           </>
         )}
       </div>

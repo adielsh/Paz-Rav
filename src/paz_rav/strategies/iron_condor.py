@@ -83,18 +83,26 @@ class IronCondor:
                      key=lambda q: abs(q.delta - target), default=None)
             if sp is None or sc is None:
                 continue
-            i_sp, j_sc = puts.index(sp), calls.index(sc)
-            # wings measured in STRIKES (further OTM), so they adapt to any strike spacing
+            if not (liquid(sp) and liquid(sc)):
+                continue
+            # Equal-width wings on BOTH sides, by construction. Strike spacing often differs
+            # between the put and call regions (e.g. SPX: 25-wide near the puts, 100-wide
+            # near the calls), so "k strikes out" on each side yields lopsided wings. The
+            # collateral is set by the *wider* spread either way — and price can't breach
+            # both sides at once — so the narrower side should always be widened to match:
+            # same margin, more premium collected. We therefore intersect the wing widths
+            # actually available (as liquid strikes) on both sides and use the k-th
+            # smallest COMMON width — wings come out exactly equal on any grid.
+            put_widths = {round(sp.strike - q.strike, 4): q
+                          for q in puts if q.strike < sp.strike and liquid(q)}
+            call_widths = {round(q.strike - sc.strike, 4): q
+                           for q in calls if q.strike > sc.strike and liquid(q)}
+            common = sorted(set(put_widths) & set(call_widths))
             for k in config.wing_strikes:
-                if i_sp - k < 0 or j_sc + k >= len(calls):
+                if k - 1 >= len(common):
                     continue
-                lp = puts[i_sp - k]      # further-OTM put = lower strike
-                lc = calls[j_sc + k]     # further-OTM call = higher strike
-                legs = (lp, sp, sc, lc)
-                if not (lp.strike < sp.strike < sc.strike < lc.strike):
-                    continue
-                if not all(liquid(q) for q in legs):
-                    continue
+                width_k = common[k - 1]
+                lp, lc = put_widths[width_k], call_widths[width_k]
                 key = (lp.strike, sp.strike, sc.strike, lc.strike)
                 if key in seen:
                     continue

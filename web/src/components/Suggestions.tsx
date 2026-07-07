@@ -2,7 +2,7 @@ import { useState, type KeyboardEvent, type MouseEvent } from "react";
 import type { Candidate } from "../types";
 import { useThemeColors } from "../theme-context";
 import { frontExpiry, num, strategyColor, strategyLabel } from "../lib";
-import { pct, usdSigned, usdStrike } from "../format";
+import { pct, usdContractSigned, usdStrike } from "../format";
 import LegLadder from "./LegLadder";
 import { IconCheckCircle, IconClock } from "./Icon";
 
@@ -170,8 +170,8 @@ export default function Suggestions({
                 ) : (
                   <MetricLine
                     items={[
-                      ["קרדיט", usdSigned(c.credit), p.good],
-                      ["הפסד מקס", usdSigned(-c.max_loss), p.bad],
+                      ["קרדיט", usdContractSigned(c.credit), p.good],
+                      ["הפסד מקס", usdContractSigned(-c.max_loss), p.bad],
                     ]}
                   />
                 )}

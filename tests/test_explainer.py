@@ -18,5 +18,7 @@ def test_iron_condor_explanation_mentions_key_numbers():
     )
     text = asyncio.run(explain(c))
     assert "SPX" in text
-    assert "5800" in text and "6200" in text     # the short strikes
+    assert "5,800" in text and "6,200" in text    # the short strikes, as $ price levels
     assert "%" in text                            # probability of success
+    # per-contract dollars (×100), not the raw per-share figure
+    assert "$2,000" in text                       # max profit = credit 20 × 100

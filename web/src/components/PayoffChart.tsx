@@ -10,7 +10,7 @@ import {
 } from "recharts";
 import type { Candidate, PayoffPoint } from "../types";
 import { useThemeColors } from "../theme-context";
-import { pct, usd, usdStrike } from "../format";
+import { CONTRACT_MULTIPLIER, pct, usdContract, usdStrike } from "../format";
 
 export default function PayoffChart({ points, candidate }: { points: PayoffPoint[]; candidate: Candidate | null }) {
   const c = useThemeColors();
@@ -27,8 +27,8 @@ export default function PayoffChart({ points, candidate }: { points: PayoffPoint
     <div>
       <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs font-mono text-ink-2 mb-2.5">
         <span>DTE <b className="text-ink font-semibold">{candidate.dte}</b></span>
-        <span>credit <b className="text-good font-semibold">{usd(candidate.credit)}</b></span>
-        <span>max loss <b className="text-bad font-semibold">{usd(candidate.max_loss)}</b></span>
+        <span>קרדיט <b className="text-good font-semibold">{usdContract(candidate.credit)}</b></span>
+        <span>הפסד מקס <b className="text-bad font-semibold">{usdContract(candidate.max_loss)}</b></span>
         <span>POP <b className="text-ink font-semibold">{pct(candidate.pop, 1)}</b></span>
         <span>
           breakevens{" "}
@@ -48,7 +48,13 @@ export default function PayoffChart({ points, candidate }: { points: PayoffPoint
             </defs>
             <CartesianGrid vertical={false} stroke={c.line} strokeOpacity={0.6} />
             <XAxis dataKey="price" tick={tickStyle} tickLine={false} axisLine={{ stroke: c.line }} />
-            <YAxis tick={tickStyle} tickLine={false} axisLine={false} width={52} tickFormatter={(v: number) => `$${v}`} />
+            <YAxis
+              tick={tickStyle}
+              tickLine={false}
+              axisLine={false}
+              width={64}
+              tickFormatter={(v: number) => `$${(v * CONTRACT_MULTIPLIER).toLocaleString("en-US")}`}
+            />
             <ReferenceLine y={0} stroke={c.ink3} strokeDasharray="3 3" />
             {candidate.breakevens.map((b) => (
               <ReferenceLine key={b} x={Math.round(b)} stroke={c.accent} strokeDasharray="2 4" />
@@ -64,7 +70,7 @@ export default function PayoffChart({ points, candidate }: { points: PayoffPoint
               }}
               labelStyle={{ color: c.ink }}
               itemStyle={{ color: c.ink }}
-              formatter={(v: number) => [usd(v), "P&L"]}
+              formatter={(v: number) => [usdContract(v), "P&L לחוזה"]}
               labelFormatter={(l) => `מחיר הנכס $${l}`}
             />
             <Area type="monotone" dataKey="pnl" stroke={c.good} strokeWidth={2} fill="url(#pnl)" />

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { CloseAdvice, Position } from "../types";
 import { closeReasonLabel, strategyColor, strategyLabel } from "../lib";
 import { useThemeColors } from "../theme-context";
-import { usdSigned } from "../format";
+import { usdContractSigned } from "../format";
 import LegLadder from "./LegLadder";
 import {
   IconAlertTriangle,
@@ -33,7 +33,7 @@ function Pnl({ value }: { value: number | null | undefined }) {
   if (value == null) return <span className="text-ink-3">—</span>;
   return (
     <span className={`font-semibold tabular-nums ${value >= 0 ? "text-good" : "text-bad"}`}>
-      {usdSigned(value)}
+      {usdContractSigned(value)}
     </span>
   );
 }
@@ -63,7 +63,9 @@ function CloseForm({
 
   return (
     <div className="mt-3 p-3 rounded-lg bg-panel2 border border-line" dir="rtl">
-      <div className="text-xs text-ink-2 mb-2.5">בסגירת כל הפוזיציה:</div>
+      <div className="text-xs text-ink-2 mb-2.5">
+        המחיר נטו למניה שקיבלת/שילמת בסגירה (כמו שמופיע בברוקר):
+      </div>
 
       <div className="flex items-center gap-3 flex-wrap">
         {/* received / paid segmented toggle */}
@@ -134,8 +136,9 @@ function CloseForm({
         <div className="text-[11px] font-mono text-ink-2 mt-2.5" aria-live="polite">
           יירשם כ:{" "}
           <span className={`font-semibold ${direction === "received" ? "text-good" : "text-bad"}`}>
-            {usdSigned(direction === "received" ? parsed : -parsed)}
-          </span>
+            {usdContractSigned(direction === "received" ? parsed : -parsed)}
+          </span>{" "}
+          לחוזה
         </div>
       )}
     </div>

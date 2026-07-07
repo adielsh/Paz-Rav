@@ -141,6 +141,28 @@ body,
   animation: modalIn 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+/* Slow drifting ambient orbs — atmospheric only. Each drifts on its own rhythm so the
+   background feels alive without ever demanding attention. Disabled under reduced-motion. */
+@keyframes drift-a {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-6%, 8%) scale(1.08); }
+}
+@keyframes drift-b {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(7%, -5%) scale(1.12); }
+}
+@keyframes drift-c {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(4%, 6%) scale(0.92); }
+}
+.orb-a { animation: drift-a 26s ease-in-out infinite; }
+.orb-b { animation: drift-b 34s ease-in-out infinite; }
+.orb-c { animation: drift-c 30s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .orb-a, .orb-b, .orb-c { animation: none !important; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

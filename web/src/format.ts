@@ -32,3 +32,20 @@ export function pct(fraction: number | null | undefined, digits = 0): string {
   if (fraction == null || Number.isNaN(fraction)) return "—";
   return (fraction * 100).toFixed(digits) + "%";
 }
+
+/** US options are quoted PER SHARE; one contract controls 100 shares. Premiums and P&L on
+ * a candidate/position are per-share, so account dollars = value × 100. Strikes/breakevens
+ * are price levels and must NOT be multiplied (use usd/usdStrike for those). */
+export const CONTRACT_MULTIPLIER = 100;
+
+/** Per-share premium/P&L -> real per-contract dollars: 9.55 -> "$955.00". */
+export function usdContract(perShare: number | null | undefined): string {
+  if (perShare == null || Number.isNaN(perShare)) return "—";
+  return usd(perShare * CONTRACT_MULTIPLIER);
+}
+
+/** Signed per-contract dollars: 5.55 -> "+$555.00". */
+export function usdContractSigned(perShare: number | null | undefined): string {
+  if (perShare == null || Number.isNaN(perShare)) return "—";
+  return usdSigned(perShare * CONTRACT_MULTIPLIER);
+}

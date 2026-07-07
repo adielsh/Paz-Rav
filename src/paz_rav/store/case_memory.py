@@ -126,8 +126,10 @@ def case_from_position(position, situation_vector: tuple[float, ...]) -> Case:
     pnl = position.realized_pnl or 0.0
     won = pnl > 0
     label = "iron condor" if position.strategy == "iron_condor" else position.strategy.upper()
+    # realized_pnl is per-share; show real per-contract dollars (×100) in the recap.
+    dollars = pnl * 100
     summary = (f"{label} {position.underlying} · "
-               f"{'+' if pnl >= 0 else ''}{round(pnl, 2)} · {position.close_reason or 'manual'}")
+               f"{'+' if dollars >= 0 else '-'}${abs(dollars):,.0f} · {position.close_reason or 'manual'}")
     return Case(
         position_id=position.id, underlying=position.underlying, strategy=position.strategy,
         vector=tuple(situation_vector), realized_pnl=round(pnl, 4),
