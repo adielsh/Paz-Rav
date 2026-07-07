@@ -30,6 +30,7 @@ from paz_rav.pipeline import Pipeline
 from paz_rav.positions import InMemoryPositionRepository, Position
 from paz_rav.positions.exit_rules import mark_to_market
 from paz_rav.scheduler import Scheduler
+from paz_rav.store.case_memory import InMemoryCaseMemory, case_from_position
 from paz_rav.store.memory import (
     InMemoryCandidateRepository,
     InMemoryFeatureStore,
@@ -61,8 +62,16 @@ async def _build_real_stores(settings):
     candidate_repo = await PostgresCandidateRepository.connect(settings.database_url)
     position_repo = await PostgresPositionRepository.connect(settings.database_url)
     access_repo = await PostgresAccessRequestRepository.connect(settings.database_url)
+    # pgvector case-memory — degrades to in-memory if the extension isn't available (a
+    # plain Postgres image), so retrieval simply returns fewer/no cases rather than failing.
+    try:
+        from paz_rav.store.postgres_case_memory import PostgresCaseMemory
+        case_memory = await PostgresCaseMemory.connect(settings.database_url)
+    except Exception:
+        log.warning("pgvector unavailable — using in-memory case memory")
+        case_memory = InMemoryCaseMemory()
     return (RedisFeatureStore(r), RedisIVHistory(r), RedisBus(r), candidate_repo,
-            position_repo, access_repo)
+            position_repo, access_repo, case_memory)
 
 
 def create_app(
@@ -104,16 +113,17 @@ def create_app(
     # correct-event-loop reasoning as the other stores) when PAZ_PERSIST=redis_postgres.
     position_repo = InMemoryPositionRepository()
     access_repo = InMemoryAccessRequestRepository()
+    case_memory = InMemoryCaseMemory()
     pipeline = Pipeline(feed, feature_store, iv_history, candidate_repo, bus, config,
                         strategies=FOCUS_STRATEGIES, position_repo=position_repo)
     scheduler = Scheduler(pipeline, underlyings, interval=interval, today=today)
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        nonlocal feature_store, iv_history, bus, candidate_repo, position_repo, access_repo, pipeline, scheduler
+        nonlocal feature_store, iv_history, bus, candidate_repo, position_repo, access_repo, case_memory, pipeline, scheduler
         if settings.paz_persist == "redis_postgres":
             (feature_store, iv_history, bus, candidate_repo,
-             position_repo, access_repo) = await _build_real_stores(settings)
+             position_repo, access_repo, case_memory) = await _build_real_stores(settings)
             pipeline = Pipeline(feed, feature_store, iv_history, candidate_repo, bus, config,
                                 strategies=FOCUS_STRATEGIES, position_repo=position_repo)
             scheduler = Scheduler(pipeline, underlyings, interval=interval, today=today)
@@ -334,7 +344,25 @@ def create_app(
                                       datetime.now(timezone.utc))
         if closed is None:
             return {"error": "position not found or already closed"}
+        await _remember_case(closed)
         return _position_to_dict(closed)
+
+    async def _remember_case(pos: Position) -> None:
+        """Record a just-closed position into case memory (best-effort). The vector is the
+        deterministic feature vector of its closing state, so a future open position in a
+        similar state can recall this real outcome. Never blocks or breaks a close."""
+        from paz_rav.agents.close_advisor import situation_vector
+        from paz_rav.agents.close_advisor import build_situation as _bs
+
+        try:
+            f = await feature_store.get(pos.underlying)
+            spot = f.spot if f else None
+            if spot is None:
+                return
+            sit = _bs(pos, spot=spot, today=today or date.today(), feature=f)
+            await case_memory.add(case_from_position(pos, situation_vector(sit)))
+        except Exception:
+            log.debug("case-memory record skipped", exc_info=True)
 
     async def _advice_for(pos: Position, force: bool) -> dict | None:
         """Run the close-timing debate for one OPEN position over deterministic inputs.
@@ -360,7 +388,7 @@ def create_app(
             except Exception:
                 recent = None
         return await advise(pos, spot=spot, today=today or date.today(), feature=f,
-                            recent_closes=recent, force=force)
+                            recent_closes=recent, force=force, memory=case_memory)
 
     @app.get("/api/positions/{position_id}/close-advice")
     async def api_close_advice(position_id: str) -> dict:

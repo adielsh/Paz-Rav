@@ -220,24 +220,45 @@ async def _ask(client, *, system: str, tool: dict, user: str) -> dict:
     raise RuntimeError("model returned no tool_use block")
 
 
-async def _debate_llm(sit: Situation, settings) -> dict:
+def _memory_note(recalled: list | None) -> str:
+    """A grounded context block listing how the most similar *closed* trades ended. Fed to
+    every model so the debate leans on real history — still only computed numbers, never a
+    made-up one. Empty when there's no memory yet."""
+    if not recalled:
+        return ""
+    lines = []
+    for n in recalled:
+        c = n.case
+        lines.append(f"- {c.summary}  (דמיון {n.similarity:.0%}, "
+                     f"{'רווח' if c.won else 'הפסד'})")
+    wins = sum(1 for n in recalled if n.case.won)
+    header = (f"עסקאות דומות שנסגרו בעבר ({wins}/{len(recalled)} הרוויחו) — "
+              "שקול את התוצאות האלה, אך אל תמציא מהן מספרים:")
+    return header + "\n" + "\n".join(lines)
+
+
+async def _debate_llm(sit: Situation, settings, mem_note: str = "") -> dict:
     """Run the three-model debate. Prefers the LangGraph orchestration (real LLM nodes +
     a conditional revision loop); falls back to a plain sequential pass if langgraph isn't
     installed or the graph errors — both return the identical shape to callers."""
     if _graph_available():
         try:
-            return await _debate_graph(sit, settings)
+            return await _debate_graph(sit, settings, mem_note)
         except Exception:
             pass
-    return await _debate_sequential(sit, settings)
+    return await _debate_sequential(sit, settings, mem_note)
 
 
-async def _debate_sequential(sit: Situation, settings) -> dict:
+def _with_memory(sit_json: str, mem_note: str) -> str:
+    return sit_json + ("\n\nזיכרון מקרים:\n" + mem_note if mem_note else "")
+
+
+async def _debate_sequential(sit: Situation, settings, mem_note: str = "") -> dict:
     """The straight-line path: analyst -> critic -> decider, no loop-back."""
     from anthropic import AsyncAnthropic
 
     client = AsyncAnthropic(api_key=settings.anthropic_api_key)
-    sit_json = json.dumps(asdict(sit), ensure_ascii=False)
+    sit_json = _with_memory(json.dumps(asdict(sit), ensure_ascii=False), mem_note)
 
     analyst = await _ask(client, system=_ANALYST_SYS, tool=_STANCE_TOOL,
                          user="SITUATION:\n" + sit_json)
@@ -279,6 +300,7 @@ _REVISE_CONFIDENCE = 0.5   # a shaky Decider verdict triggers exactly one recons
 
 class DebateState(TypedDict, total=False):
     sit_json: str
+    mem_note: str          # recalled similar-case context (may be empty)
     client: Any            # AsyncAnthropic — travels in state, never serialized
     analyst: dict
     critic: dict
@@ -289,7 +311,7 @@ class DebateState(TypedDict, total=False):
 
 
 async def _g_analyst(state: DebateState) -> DebateState:
-    prompt = "SITUATION:\n" + state["sit_json"]
+    prompt = "SITUATION:\n" + _with_memory(state["sit_json"], state.get("mem_note", ""))
     if state.get("revisions", 0) > 0 and state.get("focus"):
         prompt += ("\n\nשקול מחדש לאור התנגדות המבקר (אל תתעלם ממנה):\n" + state["focus"])
     analyst = await _ask(state["client"], system=_ANALYST_SYS, tool=_STANCE_TOOL, user=prompt)
@@ -348,7 +370,7 @@ def _build_debate_graph():
     return g.compile()
 
 
-async def _debate_graph(sit: Situation, settings) -> dict:
+async def _debate_graph(sit: Situation, settings, mem_note: str = "") -> dict:
     from anthropic import AsyncAnthropic
 
     global _debate_graph_compiled
@@ -358,7 +380,7 @@ async def _debate_graph(sit: Situation, settings) -> dict:
     client = AsyncAnthropic(api_key=settings.anthropic_api_key)
     state = await _debate_graph_compiled.ainvoke({
         "sit_json": json.dumps(asdict(sit), ensure_ascii=False),
-        "client": client, "revisions": 0,
+        "mem_note": mem_note, "client": client, "revisions": 0,
     })
     d = state["decision"]
     return {
@@ -460,18 +482,41 @@ def _maybe_trace(position: Position, sit: Situation, result: dict) -> None:
         pass
 
 
-async def _debate_remote(sit: Situation, settings) -> dict:
+def situation_vector(sit: Situation) -> tuple[float, ...]:
+    """The deterministic case-memory vector for a situation — same feature layout used to
+    store closed cases, so a live situation and past cases are directly comparable."""
+    from paz_rav.store.case_memory import vectorize
+
+    return vectorize(strategy=sit.strategy, dte=sit.dte,
+                     pnl_pct_of_max=sit.pnl_pct_of_max,
+                     distance_to_stop_pct=sit.distance_to_stop_pct,
+                     iv_rank=sit.iv_rank, rsi=sit.rsi,
+                     recent_move_pct=sit.recent_move_pct, regime=sit.regime)
+
+
+async def _recall(sit: Situation, memory, k: int = 5) -> list:
+    """Fetch the k most similar closed cases (best-effort — never blocks the debate)."""
+    if memory is None:
+        return []
+    try:
+        return await memory.similar(situation_vector(sit), strategy=sit.strategy, k=k)
+    except Exception:
+        return []
+
+
+async def _debate_remote(sit: Situation, settings, mem_note: str = "") -> dict:
     """Call the extracted advisor microservice over HTTP (paz_rav/services/advisor)."""
     import httpx
 
     url = settings.advisor_url.rstrip("/") + "/advise"
+    body = {"situation": asdict(sit), "mem_note": mem_note}
     async with httpx.AsyncClient(timeout=settings.advisor_timeout) as client:
-        resp = await client.post(url, json={"situation": asdict(sit)})
+        resp = await client.post(url, json=body)
         resp.raise_for_status()
         return resp.json()
 
 
-async def _resolve_debate(sit: Situation, settings) -> dict:
+async def _resolve_debate(sit: Situation, settings, mem_note: str = "") -> dict:
     """Pick where the debate runs, most-specific first, each degrading to the next:
     remote advisor service -> in-process LLM debate -> deterministic rule-based debate.
 
@@ -482,14 +527,14 @@ async def _resolve_debate(sit: Situation, settings) -> dict:
     """
     if settings.advisor_url:
         try:
-            r = await _debate_remote(sit, settings)
+            r = await _debate_remote(sit, settings, mem_note)
             r.setdefault("served_by", "advisor-service")
             return r
         except Exception:
             pass   # circuit breaker -> run it here instead
     if settings.anthropic_api_key:
         try:
-            r = await _debate_llm(sit, settings)
+            r = await _debate_llm(sit, settings, mem_note)
             r["engine"] = "llm"
             return r
         except Exception:
@@ -501,12 +546,16 @@ async def _resolve_debate(sit: Situation, settings) -> dict:
 
 async def advise(position: Position, *, spot: float, today: date, feature=None,
                  recent_closes: list[float] | None = None, force: bool = False,
-                 cfg: ExitConfig | None = None) -> dict:
+                 cfg: ExitConfig | None = None, memory=None) -> dict:
     """Run (or return a cached) close-timing debate for one open position.
 
+    ``memory`` (optional CaseMemory): when given, the k most similar *closed* positions are
+    recalled and fed to the debate as grounded context, so the models lean on your own
+    history (README's case-memory / RAG-lite). Retrieval degrades to "no cases" silently.
+
     Returns a JSON-safe dict: ``decision`` (hold|close|reduce), ``confidence``,
-    ``rationale`` (Hebrew), ``analyst``/``critic`` stances, the deterministic
-    ``situation`` numbers, ``engine`` ("llm" | "deterministic") and ``computed_at``.
+    ``rationale`` (Hebrew), ``analyst``/``critic`` stances, ``recalled`` (similar past
+    cases), the deterministic ``situation`` numbers, ``engine`` and ``computed_at``.
     """
     from paz_rav.config import get_settings
 
@@ -518,7 +567,13 @@ async def advise(position: Position, *, spot: float, today: date, feature=None,
         return cached
 
     settings = get_settings()
-    result = await _resolve_debate(sit, settings)
+    recalled = await _recall(sit, memory)
+    result = await _resolve_debate(sit, settings, _memory_note(recalled))
+    result["recalled"] = [
+        {"summary": n.case.summary, "similarity": round(n.similarity, 3),
+         "won": n.case.won, "realized_pnl": n.case.realized_pnl}
+        for n in recalled
+    ]
     result["situation"] = asdict(sit)
     result["computed_at"] = datetime.now(timezone.utc).isoformat()
     result["_sig"] = sig

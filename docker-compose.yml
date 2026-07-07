@@ -2,7 +2,11 @@
 # `docker compose up -d` gives you Postgres (durable state) + Redis (hot state / pub-sub).
 services:
   postgres:
-    image: postgres:16-alpine
+    # pgvector/pgvector is a drop-in superset of the official postgres:16 image — same
+    # PGDATA, env vars and wire protocol — that ships the `vector` extension the
+    # close-timing case memory uses (store/postgres_case_memory.py). Swapping back to
+    # postgres:16 just makes case memory fall back to in-memory; nothing else changes.
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: paz
       POSTGRES_PASSWORD: paz

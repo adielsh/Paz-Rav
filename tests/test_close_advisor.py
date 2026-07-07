@@ -137,7 +137,7 @@ def test_resolve_debate_prefers_remote_and_circuit_breaks(monkeypatch):
     fake = types.SimpleNamespace(advisor_url="http://advisor:8001",
                                  anthropic_api_key="", advisor_timeout=5.0)
 
-    async def ok_remote(_sit, _settings):
+    async def ok_remote(_sit, _settings, _mem_note=""):
         return {"decision": "hold", "confidence": 0.9, "rationale": "from service",
                 "analyst": {"stance": "hold", "reasons": ["x"]},
                 "critic": {"stance": "close", "reasons": ["y"]}, "engine": "llm"}
@@ -146,7 +146,7 @@ def test_resolve_debate_prefers_remote_and_circuit_breaks(monkeypatch):
     out = asyncio.run(ca._resolve_debate(sit, fake))
     assert out["served_by"] == "advisor-service" and out["decision"] == "hold"
 
-    async def boom_remote(_sit, _settings):
+    async def boom_remote(_sit, _settings, _mem_note=""):
         raise RuntimeError("advisor down")
 
     monkeypatch.setattr(ca, "_debate_remote", boom_remote)

@@ -118,6 +118,27 @@ Two invariants keep it honest:
    "check now") re-runs the debate. Each debate is traced to Langfuse on the position's
    original opening trace.
 
+## Case memory — learning from your own closed trades
+
+The debate gets better with history via **case memory** (`store/case_memory.py`,
+pgvector-backed in `store/postgres_case_memory.py`). Every closed position is stored as a
+`(vector, real outcome)` pair; when the debate runs on an open position, it recalls the
+*k* most similar closed trades and hands their outcomes to the models as grounded context
+("trades that reached a state like this one ended 4/5 in profit").
+
+The deliberate design choice: **a case's vector is a deterministic feature vector, not an
+LLM text embedding.** `vectorize()` builds it straight from the numbers the quant core
+already computed (normalized DTE, P&L %, distance-to-stop, IV rank, RSI, recent move, plus
+strategy/regime one-hots). Similar market states sit close in that space; retrieval is
+plain cosine similarity (pgvector's `<=>`). This keeps the deterministic line intact — the
+"embedding" is just the computed numbers, so it's fully reproducible and testable offline
+with no embedding API, and the models still only ever reason over computed figures, now
+including past outcomes.
+
+It degrades gracefully at every layer: no pgvector extension → falls back to an in-memory
+cosine scan; no closed cases yet → the debate simply runs without recall. Honest by
+design: case memory only helps once there's a real body of outcomes to retrieve against.
+
 ## Concurrency model
 
 | Work | Worker | Why |
@@ -136,9 +157,10 @@ Tailwind, Docker Compose.
 **AI layer** — Anthropic SDK (direct calls, no framework), LangGraph (the Analyst↔Critic
 loop only), Langfuse (tracing + scoring).
 
+**In use** — pgvector (case memory: similarity recall over closed trades).
+
 **Deferred, on a real trigger** — Kafka (only if Redis Streams stops being enough at
-scale), pgvector (case-memory, once there's a real body of outcomes), Kubernetes /
-Terraform-in-anger (see [`docs/DEPLOYMENT.md`](DEPLOYMENT.md)).
+scale), Kubernetes / Terraform-in-anger (see [`docs/DEPLOYMENT.md`](DEPLOYMENT.md)).
 
 **Deliberately not used** — RabbitMQ (an asyncio/Redis queue suffices solo), the broad
 LangChain framework, MCP (plain typed functions give the same shared code path with less

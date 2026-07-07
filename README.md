@@ -40,7 +40,7 @@ flowchart LR
     end
     subgraph Store["Storage"]
         REDIS[("Redis<br/>hot state")]
-        PG[("Postgres<br/>candidates · positions")]
+        PG[("Postgres + pgvector<br/>candidates · positions · case memory")]
     end
     LF["Langfuse<br/>traces + scoring"]
     subgraph Serve["Serve"]
@@ -55,6 +55,7 @@ flowchart LR
     BUILDER --> PG
     POSITIONS --> PG
     POSITIONS --> CA
+    PG -.recall similar closed trades.-> CA
     ANALYST -.-> LF
     CRITIC -.-> LF
     POSITIONS -.-> LF
@@ -185,6 +186,39 @@ built-in fallback). Flip one setting (`ADVISOR_URL`) and it runs in-process agai
 out is a *config change, not a rewrite*, which is the whole point of building to strict
 module boundaries.
 
+## Learning from its own trades 🧠📚
+
+Every time you close a position, the system writes it into a **memory book** 📓: "a trade
+that looked like *this* ended up *this* way." Later, when the three advisors debate a new
+position, they first **flip through the book for the most similar past trades** and see how
+those turned out — so the decision leans on your real history, not just the current moment.
+
+```mermaid
+flowchart LR
+    CLOSE(["✅ You close a position"]) --> STORE["📓 Save it to the memory book<br/>(numbers + what actually happened)"]
+    STORE --> DB[("🗄️ pgvector<br/>similarity search")]
+
+    NEW(["🔘 New position — 'when should I close?'"]) --> LOOK["🔎 Find the most similar<br/>past trades"]
+    DB --> LOOK
+    LOOK --> DEBATE["🧠 The 3 advisors debate,<br/>now knowing how similar<br/>trades ended"]
+
+    classDef start fill:#fff3d6,stroke:#e0a020,color:#5a3d00;
+    classDef code fill:#e7f0fe,stroke:#2e7df6,color:#123;
+    classDef store fill:#e2f5ee,stroke:#12a37f,color:#093;
+    classDef llm fill:#efeaff,stroke:#7c4dff,color:#231a4d;
+    class CLOSE,NEW start;
+    class STORE,LOOK code;
+    class DB store;
+    class DEBATE llm;
+```
+
+The clever, honest part: a trade's "fingerprint" in the book is **not** something a language
+model made up — it's built directly from the numbers Python already computed (how much
+profit, days left, distance to the danger line, volatility, trend). Two trades that *felt*
+the same really are close together in the book. The models still only ever reason over real
+numbers — now including how past trades ended. It's honest about its limits too: with an
+empty book, the debate just runs without memory, and it fills up as you trade.
+
 ## Quick start
 
 ```bash
@@ -204,7 +238,7 @@ options (running from source, real persistence, cloud deployment) are in
 | 1 | Deterministic core + live dashboard | ✅ done |
 | 2 | Two-agent AI judgment (Analyst + Critic, LangGraph, Langfuse) | ✅ done |
 | 3 | Position lifecycle + advisory exit alerts | ✅ done |
-| 3.5 | **Close-timing debate — 3 real LLMs (Analyst/Critic/Decider) on LangGraph** | ✅ done |
+| 3.5 | **Close-timing debate — 3 real LLMs (Analyst/Critic/Decider) on LangGraph**, extracted as its own `advisor` microservice, with **pgvector case memory** (recall similar closed trades) | ✅ done |
 | 4 | Real broker connection, hardening | ⏳ not started |
 
 Details, what's proven vs. what's a known gap, and backtest results:

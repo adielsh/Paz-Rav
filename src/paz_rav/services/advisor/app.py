@@ -45,11 +45,12 @@ async def advise_endpoint(payload: dict) -> dict:
     computed by the monolith's quant core). We only weigh those numbers here.
     """
     sit = Situation(**payload["situation"])
+    mem_note = payload.get("mem_note", "")   # recalled-case context computed by the caller
     settings = get_settings()
 
     if settings.anthropic_api_key:
         try:
-            result = await _debate_llm(sit, settings)
+            result = await _debate_llm(sit, settings, mem_note)
             result["engine"] = "llm"
         except Exception:
             result = _debate_fallback(sit)

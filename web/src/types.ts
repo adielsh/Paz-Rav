@@ -67,8 +67,16 @@ export interface CloseAdvice {
   engine: "llm" | "deterministic";
   orchestration?: "langgraph" | "sequential" | "deterministic";
   revisions?: number;
+  recalled?: RecalledCase[];
   computed_at: string;
   error?: string;
+}
+
+export interface RecalledCase {
+  summary: string;
+  similarity: number;
+  won: boolean;
+  realized_pnl: number;
 }
 
 export interface Position {

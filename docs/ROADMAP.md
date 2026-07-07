@@ -21,9 +21,19 @@ verified live against real API keys.
   back onto the opening decision's Langfuse trace.
 - Candidates and positions persist to Postgres, verified to survive a container restart.
 
+**Phase 3.5 — Close-timing debate + case memory.** ✅ Done.
+- A genuine three-LLM debate (Analyst / Critic / Decider) on **when to close** an open
+  position, orchestrated by LangGraph with a conditional revision loop — the first place a
+  model actually reasons toward a decision. Extracted to its own `advisor` microservice.
+- **Case memory (RAG-lite)** — every closed position is stored as a deterministic feature
+  vector + its real outcome (pgvector). When the debate runs, it recalls the *k* most
+  similar closed trades and feeds their outcomes in as grounded context, so the Decider
+  leans on your own history. The vector is computed from the quant core's numbers, not an
+  LLM embedding — the deterministic line holds.
+
 **Not yet built:**
-- Case-memory (RAG-lite) — deferred on purpose, until there's a real body of outcomes to
-  retrieve against.
+- A strategic reflection agent that mines accumulated Langfuse/DB statistics to recommend
+  parameter tuning — deferred until there's a large enough body of outcomes to be honest.
 - A real IBKR connection — stubbed (`adapters/ibkr.py`) but not wired; not needed until
   real-time watching or order placement is required.
 - Cloud deployment — Terraform scaffold exists, nothing applied.

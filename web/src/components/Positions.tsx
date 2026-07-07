@@ -276,6 +276,24 @@ function CloseAdvicePanel({
             <Stance title="מנתח" s={advice.analyst} />
             <Stance title="מבקר (איפכא מסתברא)" s={advice.critic} />
           </div>
+          {!!advice.recalled && advice.recalled.length > 0 && (
+            <div className="p-2.5 rounded-lg bg-panel2/60 border border-line">
+              <div className="text-[11px] font-mono text-ink-3 mb-1.5">
+                עסקאות דומות שנסגרו · זיכרון מקרים
+              </div>
+              <ul className="space-y-0.5">
+                {advice.recalled.map((r, i) => (
+                  <li key={i} className="text-[12px] leading-snug flex items-center gap-2">
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${r.won ? "bg-good" : "bg-bad"}`} />
+                    <span className="text-ink-2 flex-1">{r.summary}</span>
+                    <span className="text-ink-3 font-mono text-[10px]">
+                      {Math.round(r.similarity * 100)}% דמיון
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <div className="text-[10px] font-mono text-ink-3 flex items-center gap-1.5">
             <IconClock width={11} height={11} />
             חושב {new Date(advice.computed_at).toLocaleTimeString("he-IL")} · המספרים חושבו
