@@ -28,8 +28,8 @@ function LoginScreen({ onSignIn, error }: { onSignIn: () => void; error: string 
     <div className="min-h-dvh grid place-items-center px-4">
       <div className="w-full max-w-sm rounded-2xl border border-line bg-panel/80 p-7 text-center shadow-elevated">
         <div
-          className="w-11 h-11 mx-auto mb-4 rounded-xl grid place-items-center font-mono font-bold text-base"
-          style={{ background: "linear-gradient(155deg, #E8C179, #B4863B)", color: "#1A1206" }}
+          className="w-11 h-11 mx-auto mb-4 rounded-xl grid place-items-center font-mono font-bold text-base text-white"
+          style={{ background: "linear-gradient(150deg, #14B8A6, #0369A1)" }}
           aria-hidden="true"
         >
           P

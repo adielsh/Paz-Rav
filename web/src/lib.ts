@@ -1,4 +1,4 @@
-import { colors } from "./theme";
+import { colors, type Palette } from "./theme";
 import type { Candidate, Leg } from "./types";
 
 export function strategyLabel(name: string): string {
@@ -12,12 +12,11 @@ export function strategyLabel(name: string): string {
   }
 }
 
-// Each strategy gets its own hue so the two never get confused at a glance — condor
-// keeps the brand gold (its "home" identity), DACS uses info-blue. Verdict tiers
-// (take/caution/pass) use a separate good/warn/bad scale so a strategy's identity color
-// and the committee's judgment are never the same hue.
-export function strategyColor(name: string): string {
-  return name === "iron_condor" ? colors.accent : colors.info;
+// Each strategy gets its own hue so the two never get confused at a glance — condor takes
+// the brand teal (primary), DACS the accent blue. Pass the active theme's palette so the
+// hue reads correctly in both light and dark; falls back to the light palette if omitted.
+export function strategyColor(name: string, palette: Palette = colors): string {
+  return name === "iron_condor" ? palette.primary : palette.accent;
 }
 
 export function shortStrikes(c: { legs: Leg[] }): string {

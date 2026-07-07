@@ -1,4 +1,5 @@
 import type { Leg } from "../types";
+import { usdStrike } from "../format";
 
 /** One clear, scannable row showing every leg — the direct fix for "not clear what each
  * leg's strike is": color-coded by side (red=sell, green=buy), action spelled out in
@@ -21,7 +22,7 @@ export default function LegLadder({ legs, compact }: { legs: Leg[]; compact?: bo
             />
             <span className="font-semibold">{sell ? "מכר" : "קנה"}</span>
             <span className="uppercase text-ink-2">{leg.option_type}</span>
-            <span className="text-ink font-semibold tabular-nums">{leg.strike}</span>
+            <span className="text-ink font-semibold tabular-nums">{usdStrike(leg.strike)}</span>
           </span>
         );
       })}

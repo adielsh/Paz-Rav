@@ -5,12 +5,14 @@ import TradeDetails from "./components/TradeDetails";
 import DacsGuide from "./components/DacsGuide";
 import Positions from "./components/Positions";
 import ReflectionPanel from "./components/Reflection";
-import AmbientBackground from "./components/AmbientBackground";
+import HowItWorks from "./components/HowItWorks";
 import KpiStrip from "./components/KpiStrip";
-import { SignedInBar } from "./AuthGate";
+import Sidebar, { type ViewId } from "./components/Sidebar";
+import Topbar from "./components/Topbar";
 import { authedFetch } from "./api";
 import { currentIdToken } from "./auth";
 import { strategyColor, strategyLabel } from "./lib";
+import { useThemeColors } from "./theme-context";
 import type { Candidate, CloseAdvice, PayoffPoint, Position, Reflection, Review } from "./types";
 
 interface Group {
@@ -18,43 +20,17 @@ interface Group {
   trades: Candidate[];
 }
 
-function Logo() {
-  // A one-off decorative gradient (lighter/darker variants of the brand gold) — not a
-  // reusable semantic token, so it's not in theme.ts.
-  return (
-    <div className="relative shrink-0">
-      <div className="absolute inset-0 rounded-xl bg-accent/40 blur-lg" aria-hidden="true" />
-      <div
-        className="relative w-10 h-10 rounded-xl grid place-items-center font-mono font-bold text-base shadow-elevated"
-        style={{ background: "linear-gradient(155deg, #E8C179, #B4863B)", color: "#1A1206" }}
-        aria-hidden="true"
-      >
-        P
-      </div>
-    </div>
-  );
-}
-
-function ConnectionBadge({ connected }: { connected: boolean }) {
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 text-xs font-mono font-medium px-2.5 py-1.5 rounded-full border ${
-        connected ? "border-good/35 text-good bg-good/10" : "border-bad/35 text-bad bg-bad/10"
-      }`}
-      role="status"
-      aria-live="polite"
-    >
-      <span
-        className={`w-1.5 h-1.5 rounded-full ${connected ? "bg-good" : "bg-bad"} ${
-          connected ? "" : "animate-pulse-soft"
-        }`}
-      />
-      {connected ? "Live" : "Reconnecting…"}
-    </span>
-  );
-}
+const VIEW_META: Record<ViewId, { title: string; subtitle: string }> = {
+  dashboard: { title: "לוח מסחר", subtitle: "Iron Condor · DACS 1.0 — top 5 each" },
+  insights: { title: "תובנות אסטרטגיה", subtitle: "רפלקציה על העסקאות שנסגרו" },
+  dacs: { title: "מדריך DACS 1.0", subtitle: "האסטרטגיה, שלב אחר שלב" },
+  how: { title: "איך המערכת בנויה", subtitle: "ארכיטקטורה · שכבת ה-AI" },
+};
 
 export default function App({ user }: { user: User | null }) {
+  const c = useThemeColors();
+  const [view, setView] = useState<ViewId>("dashboard");
+  const [menuOpen, setMenuOpen] = useState(false);
   const [groups, setGroups] = useState<Group[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [sel, setSel] = useState(0);
@@ -74,17 +50,15 @@ export default function App({ user }: { user: User | null }) {
       .then((d) => setPositions(d.positions ?? []))
       .catch(() => {});
 
-  const openPosition = async (c: Candidate) => {
-    const idx = c.u_idx ?? 0;
-    const r = await authedFetch(`/api/positions/open/${c.underlying}/${idx}`, { method: "POST" });
+  const openPosition = async (candidate: Candidate) => {
+    const idx = candidate.u_idx ?? 0;
+    const r = await authedFetch(`/api/positions/open/${candidate.underlying}/${idx}`, { method: "POST" });
     if (!r.ok) throw new Error("open failed");
     await refreshPositions();
   };
 
   const advisePosition = async (id: string, force: boolean): Promise<CloseAdvice> => {
-    const r = await authedFetch(`/api/positions/${id}/close-advice`, {
-      method: force ? "POST" : "GET",
-    });
+    const r = await authedFetch(`/api/positions/${id}/close-advice`, { method: force ? "POST" : "GET" });
     if (!r.ok) throw new Error("advice failed");
     return r.json();
   };
@@ -129,7 +103,7 @@ export default function App({ user }: { user: User | null }) {
         const msg = JSON.parse(ev.data);
         if (msg.type === "candidates" || msg.type === "snapshot") {
           refreshTop();
-          refreshPositions(); // a scan may have swept the Exit Manager too
+          refreshPositions();
         }
       };
     };
@@ -161,84 +135,90 @@ export default function App({ user }: { user: User | null }) {
       .catch(() => setReview(null));
   }, [current]);
 
+  const meta = VIEW_META[view];
+
   return (
-    <div className="relative max-w-7xl mx-auto px-4 sm:px-6 py-7">
-      <AmbientBackground />
-      <header className="flex items-center justify-between gap-4 mb-7">
-        <div className="flex items-center gap-3.5">
-          <Logo />
-          <div>
-            <h1 className="text-xl font-bold tracking-tight leading-none">
-              Paz Rav
-              <span className="text-ink-2 text-sm font-normal ml-2.5">best positions to open</span>
-            </h1>
-            <p className="text-2xs uppercase tracking-wider text-ink-3 font-mono mt-1.5">
-              Iron Condor · DACS 1.0 — top 5 each
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3.5">
-          {user && <SignedInBar user={user} />}
-          <ConnectionBadge connected={connected} />
-        </div>
-      </header>
+    <div className="flex min-h-dvh" dir="rtl">
+      <Sidebar view={view} onSelect={setView} open={menuOpen} onClose={() => setMenuOpen(false)} />
 
-      <KpiStrip groups={groups} positions={positions} />
+      <main className="flex-1 min-w-0 px-4 sm:px-6 pb-16 max-w-[1400px] mx-auto w-full">
+        <Topbar
+          title={meta.title}
+          subtitle={meta.subtitle}
+          connected={connected}
+          user={user}
+          onMenu={() => setMenuOpen(true)}
+        />
 
-      <div className="grid lg:grid-cols-[1.15fr_1fr] gap-5">
-        <div className="space-y-6">
-          {groups.length === 0 && (
-            <div className="rounded-2xl border border-line bg-panel/60 p-6 text-center text-ink-2 text-sm">
-              Waiting for the first scan…
-            </div>
-          )}
-          {groups.map((g, gi) => {
-            const offset = groups.slice(0, gi).reduce((a, x) => a + x.trades.length, 0);
-            return (
-              <section key={g.strategy}>
-                <h2 className="text-xs font-semibold font-mono mb-2.5 flex items-center gap-2 tracking-wide">
-                  <span
-                    className="w-2 h-2 rounded-full"
-                    style={{ background: strategyColor(g.strategy) }}
-                    aria-hidden="true"
-                  />
-                  <span style={{ color: strategyColor(g.strategy) }}>{strategyLabel(g.strategy)}</span>
-                  <span className="text-ink-3 font-normal">— top {g.trades.length}</span>
-                </h2>
-                <Suggestions
-                  trades={g.trades}
-                  selected={sel - offset}
-                  onSelect={(i) => setSel(offset + i)}
-                  onOpenPosition={openPosition}
-                />
+        {view === "dashboard" && (
+          <div className="animate-in space-y-6">
+            <KpiStrip groups={groups} positions={positions} />
+
+            <div className="grid lg:grid-cols-[1.15fr_1fr] gap-5">
+              <div className="space-y-6">
+                {groups.length === 0 && (
+                  <div className="rounded-2xl border border-line bg-panel/60 p-8 text-center text-ink-2 text-sm shadow-card">
+                    ממתין לסריקה הראשונה…
+                  </div>
+                )}
+                {groups.map((g, gi) => {
+                  const offset = groups.slice(0, gi).reduce((a, x) => a + x.trades.length, 0);
+                  return (
+                    <section key={g.strategy}>
+                      <h2 className="text-xs font-semibold font-mono mb-2.5 flex items-center gap-2 tracking-wide">
+                        <span
+                          className="w-2 h-2 rounded-full"
+                          style={{ background: strategyColor(g.strategy, c) }}
+                          aria-hidden="true"
+                        />
+                        <span style={{ color: strategyColor(g.strategy, c) }}>{strategyLabel(g.strategy)}</span>
+                        <span className="text-ink-3 font-normal">— top {g.trades.length}</span>
+                      </h2>
+                      <Suggestions
+                        trades={g.trades}
+                        selected={sel - offset}
+                        onSelect={(i) => setSel(offset + i)}
+                        onOpenPosition={openPosition}
+                      />
+                    </section>
+                  );
+                })}
+              </div>
+
+              <section
+                className="rounded-2xl border border-line bg-panel/80 p-5 lg:sticky lg:top-24 self-start shadow-card"
+                style={
+                  current
+                    ? { boxShadow: `0 0 0 1px ${strategyColor(current.strategy, c)}22, 0 20px 50px -24px ${strategyColor(current.strategy, c)}44` }
+                    : undefined
+                }
+              >
+                <TradeDetails candidate={current} points={payoff} review={review} />
               </section>
-            );
-          })}
-        </div>
+            </div>
 
-        <section
-          className="rounded-2xl border border-line bg-panel/70 p-5 lg:sticky lg:top-6 self-start"
-          style={
-            current
-              ? { boxShadow: `0 0 0 1px ${strategyColor(current.strategy)}22, 0 20px 50px -20px ${strategyColor(current.strategy)}33` }
-              : undefined
-          }
-        >
-          <TradeDetails candidate={current} points={payoff} review={review} />
-        </section>
-      </div>
+            <Positions positions={positions} onClose={closePosition} onAdvice={advisePosition} />
+          </div>
+        )}
 
-      <section className="mt-6">
-        <Positions positions={positions} onClose={closePosition} onAdvice={advisePosition} />
-      </section>
+        {view === "insights" && (
+          <div className="animate-in max-w-3xl">
+            <ReflectionPanel loadLatest={loadReflection} runNew={runReflection} />
+          </div>
+        )}
 
-      <section className="mt-6">
-        <ReflectionPanel loadLatest={loadReflection} runNew={runReflection} />
-      </section>
+        {view === "dacs" && (
+          <div className="animate-in max-w-3xl">
+            <DacsGuide />
+          </div>
+        )}
 
-      <section className="mt-6">
-        <DacsGuide />
-      </section>
+        {view === "how" && (
+          <div className="animate-in max-w-3xl">
+            <HowItWorks />
+          </div>
+        )}
+      </main>
     </div>
   );
 }

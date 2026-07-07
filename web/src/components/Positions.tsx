@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { CloseAdvice, Position } from "../types";
 import { closeReasonLabel, strategyColor, strategyLabel } from "../lib";
-import { colors } from "../theme";
+import { useThemeColors } from "../theme-context";
+import { usdSigned } from "../format";
 import LegLadder from "./LegLadder";
 import {
   IconAlertTriangle,
@@ -13,10 +14,10 @@ import {
   IconScale,
 } from "./Icon";
 
-const DECISION: Record<string, { label: string; cls: string; color: string }> = {
-  hold: { label: "החזק", cls: "bg-good/15 text-good border-good/40", color: colors.good },
-  close: { label: "שקול לסגור", cls: "bg-bad/15 text-bad border-bad/40", color: colors.bad },
-  reduce: { label: "הקטן פוזיציה", cls: "bg-warn/15 text-warn border-warn/40", color: colors.warn },
+const DECISION: Record<string, { label: string; cls: string }> = {
+  hold: { label: "החזק", cls: "bg-good/15 text-good border-good/40" },
+  close: { label: "שקול לסגור", cls: "bg-bad/15 text-bad border-bad/40" },
+  reduce: { label: "הקטן פוזיציה", cls: "bg-warn/15 text-warn border-warn/40" },
 };
 
 const STANCE_LABEL: Record<string, string> = { hold: "החזק", close: "סגור", reduce: "הקטן" };
@@ -32,7 +33,7 @@ function Pnl({ value }: { value: number | null | undefined }) {
   if (value == null) return <span className="text-ink-3">—</span>;
   return (
     <span className={`font-semibold tabular-nums ${value >= 0 ? "text-good" : "text-bad"}`}>
-      {value >= 0 ? "+" : "-"}${Math.abs(value).toFixed(2)}
+      {usdSigned(value)}
     </span>
   );
 }
@@ -133,7 +134,7 @@ function CloseForm({
         <div className="text-[11px] font-mono text-ink-2 mt-2.5" aria-live="polite">
           יירשם כ:{" "}
           <span className={`font-semibold ${direction === "received" ? "text-good" : "text-bad"}`}>
-            {direction === "received" ? "+" : "-"}${parsed.toFixed(2)}
+            {usdSigned(direction === "received" ? parsed : -parsed)}
           </span>
         </div>
       )}
@@ -314,10 +315,11 @@ function PositionCard({
   onClose: (id: string, exitCredit: number) => Promise<void>;
   onAdvice: (id: string, force: boolean) => Promise<CloseAdvice>;
 }) {
+  const pal = useThemeColors();
   const [closing, setClosing] = useState(false);
   const isOpen = p.status === "open";
   const hasAlert = isOpen && !!p.alert;
-  const rail = hasAlert ? colors.bad : strategyColor(p.strategy);
+  const rail = hasAlert ? pal.bad : strategyColor(p.strategy, pal);
 
   return (
     <div
@@ -333,14 +335,14 @@ function PositionCard({
       <div className="flex items-center gap-2 mb-2.5">
         <span
           className={`w-2 h-2 rounded-full shrink-0 ${
-            hasAlert ? "bg-bad animate-pulse-soft" : isOpen ? "bg-good" : "bg-ink3"
+            hasAlert ? "bg-bad animate-pulse-soft" : isOpen ? "bg-good" : "bg-ink-3"
           }`}
           aria-hidden="true"
         />
-        <span className="font-mono font-bold text-base tracking-tight">{p.underlying}</span>
+        <span className="font-mono font-bold text-base tracking-tight text-ink">{p.underlying}</span>
         <span
           className="text-xs font-mono px-2 py-0.5 rounded-full"
-          style={{ background: `${strategyColor(p.strategy)}22`, color: strategyColor(p.strategy) }}
+          style={{ background: `${strategyColor(p.strategy, pal)}22`, color: strategyColor(p.strategy, pal) }}
         >
           {strategyLabel(p.strategy)}
         </span>
@@ -420,14 +422,14 @@ export default function Positions({
   const alerts = open.filter((p) => p.alert);
 
   return (
-    <div className="rounded-2xl border border-line bg-panel/50 p-4">
+    <div className="rounded-2xl border border-line bg-panel/60 p-4 shadow-card" dir="rtl">
       <h2 className="text-2xs uppercase tracking-wider text-ink-3 font-mono mb-3">
-        Positions
-        {open.length > 0 && <span className="text-accent"> · {open.length} open</span>}
-        {alerts.length > 0 && <span className="text-bad"> · {alerts.length} need attention</span>}
+        פוזיציות
+        {open.length > 0 && <span className="text-primary"> · {open.length} פתוחות</span>}
+        {alerts.length > 0 && <span className="text-bad"> · {alerts.length} דורשות טיפול</span>}
       </h2>
       {positions.length === 0 ? (
-        <div className="text-ink-2 text-sm">No positions yet — open one from a suggestion above.</div>
+        <div className="text-ink-2 text-sm">אין עדיין פוזיציות — פתח אחת מההצעות למעלה.</div>
       ) : (
         <div className="grid gap-3">
           {[...open, ...closed].map((p) => (
