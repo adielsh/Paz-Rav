@@ -25,6 +25,7 @@ def _leg_to_dict(leg: Leg) -> dict:
         "quantity": leg.quantity,
         "expiry": leg.expiry.isoformat() if leg.expiry else None,
         "iv": leg.iv,
+        "delta": leg.delta,
     }
 
 
@@ -37,6 +38,7 @@ def _leg_from_dict(d: dict) -> Leg:
         quantity=d.get("quantity", 1),
         expiry=date.fromisoformat(exp) if exp else None,
         iv=d.get("iv"),
+        delta=d.get("delta"),
     )
 
 

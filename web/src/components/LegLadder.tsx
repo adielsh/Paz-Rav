@@ -23,6 +23,11 @@ export default function LegLadder({ legs, compact }: { legs: Leg[]; compact?: bo
             <span className="font-semibold">{sell ? "מכר" : "קנה"}</span>
             <span className="uppercase text-ink-2">{leg.option_type}</span>
             <span className="text-ink font-semibold tabular-nums">{usdStrike(leg.strike)}</span>
+            {leg.delta != null && (
+              <span className="text-ink-3 tabular-nums" dir="ltr" title="דלתא של הרגל בזמן הסריקה">
+                Δ{leg.delta.toFixed(2)}
+              </span>
+            )}
           </span>
         );
       })}

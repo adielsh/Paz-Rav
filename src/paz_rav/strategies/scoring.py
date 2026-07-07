@@ -79,5 +79,5 @@ def finalize(
         score=score,
         meta={"regime_fit": regime_fit, "expected_pnl": gs.expected_pnl,
               "ror": round(ror, 4), "eval_date": eval_date.isoformat(),
-              "sigma": round(sigma, 4)},
+              "sigma": round(sigma, 4), "spot": round(spot, 2)},
     )

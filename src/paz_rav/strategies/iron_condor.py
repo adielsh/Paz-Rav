@@ -29,8 +29,13 @@ class IronCondor:
         put_long: float, put_short: float, call_short: float, call_long: float,
         credit: float, sigma: float,
         today: date | None = None, ctx: MarketContext | None = None, vrp: float = 0.0,
+        deltas: tuple[float | None, float | None, float | None, float | None] = (None,) * 4,
     ) -> Candidate:
-        """Assemble a priced iron condor from its four strikes and the net credit."""
+        """Assemble a priced iron condor from its four strikes and the net credit.
+
+        ``deltas`` (optional) are the scan-time leg deltas in strike order
+        (put_long, put_short, call_short, call_long) — shown per leg on the dashboard.
+        """
         if not (put_long < put_short < call_short < call_long):
             raise ValueError("strikes must be ordered put_long < put_short < call_short < call_long")
         if credit <= 0:
@@ -40,11 +45,12 @@ class IronCondor:
         eval_date = today + timedelta(days=max(dte, 1))
         width = max(put_short - put_long, call_long - call_short)  # margin = wider spread
 
+        d_lp, d_sp, d_sc, d_lc = deltas
         legs = [
-            Leg("buy", "put", put_long, expiry=eval_date),
-            Leg("sell", "put", put_short, expiry=eval_date),
-            Leg("sell", "call", call_short, expiry=eval_date),
-            Leg("buy", "call", call_long, expiry=eval_date),
+            Leg("buy", "put", put_long, expiry=eval_date, delta=d_lp),
+            Leg("sell", "put", put_short, expiry=eval_date, delta=d_sp),
+            Leg("sell", "call", call_short, expiry=eval_date, delta=d_sc),
+            Leg("buy", "call", call_long, expiry=eval_date, delta=d_lc),
         ]
         return finalize(
             underlying=underlying, strategy=self.name, legs=legs, entry_credit=credit,
@@ -117,6 +123,7 @@ class IronCondor:
                         call_short=sc.strike, call_long=lc.strike,
                         credit=round(credit, 2), sigma=sp.iv or 0.20,
                         today=today, ctx=ctx, vrp=config.vrp,
+                        deltas=(lp.delta, sp.delta, sc.delta, lc.delta),
                     ))
                 except ValueError:
                     continue

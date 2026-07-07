@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { IconBook, IconGauge, IconSitemap, IconX } from "./Icon";
+import { IconBook, IconBox, IconClock, IconGauge, IconSitemap, IconX } from "./Icon";
 
-export type ViewId = "dashboard" | "insights" | "dacs" | "how";
+export type ViewId = "dashboard" | "condor" | "dacs" | "insights" | "dacsGuide" | "how";
 
 interface NavItem {
   id: ViewId;
@@ -11,9 +11,11 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
-  { id: "dashboard", label: "לוח מסחר", sub: "הצעות ופוזיציות", icon: <IconGauge width={18} height={18} /> },
+  { id: "dashboard", label: "לוח מסחר", sub: "מבט-על ופוזיציות", icon: <IconGauge width={18} height={18} /> },
+  { id: "condor", label: "Iron Condor", sub: "הצעות מכירת פרמיה", icon: <IconBox width={18} height={18} /> },
+  { id: "dacs", label: "DACS 1.0", sub: "קלנדר דיאגונלי", icon: <IconClock width={18} height={18} /> },
   { id: "insights", label: "תובנות אסטרטגיה", sub: "רפלקציה על העסקאות", icon: <IconBrainSmall /> },
-  { id: "dacs", label: "מדריך DACS", sub: "איך הכל עובד", icon: <IconBook width={18} height={18} /> },
+  { id: "dacsGuide", label: "מדריך DACS", sub: "האסטרטגיה שלב-שלב", icon: <IconBook width={18} height={18} /> },
   { id: "how", label: "איך המערכת בנויה", sub: "ארכיטקטורה ו-AI", icon: <IconSitemap width={18} height={18} /> },
 ];
 

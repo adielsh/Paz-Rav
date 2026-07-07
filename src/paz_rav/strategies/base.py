@@ -18,6 +18,10 @@ class Leg:
     expiry is later than the evaluation date is still alive and must be *priced*, not
     just taken at intrinsic. ``expiry=None`` means the leg expires at the structure's
     evaluation date (the single-expiry case, e.g. an iron condor).
+
+    ``delta`` is the leg's delta at scan time (signed: puts negative) — carried so the
+    dashboard can show each leg's delta; None when built without chain data (tests,
+    hand-built structures).
     """
 
     side: Side
@@ -26,6 +30,7 @@ class Leg:
     quantity: int = 1
     expiry: date | None = None
     iv: float | None = None
+    delta: float | None = None
 
 
 @dataclass(frozen=True, slots=True)

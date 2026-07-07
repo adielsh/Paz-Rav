@@ -60,6 +60,16 @@ export default function TradeDetails({
 
       {review?.context && (
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-mono text-ink-2 mb-3" dir="rtl">
+          {review.context.spot != null && (
+            <span>
+              מחיר נוכחי: <span className="text-ink font-semibold">{usdStrike(review.context.spot)}</span>
+            </span>
+          )}
+          {review.context.expected_move != null && (
+            <span title="התנועה הצפויה של הנכס עד הפקיעה הקרובה (סטיית תקן אחת)">
+              תנועה צפויה: <span className="text-accent font-semibold" dir="ltr">±{usdStrike(review.context.expected_move)}</span>
+            </span>
+          )}
           <span>משטר: <span className="text-ink">{review.context.regime}</span></span>
           <span>IV rank: <span className="text-ink">{review.context.iv_rank}</span></span>
           {review.context.rsi != null && <span>RSI: <span className="text-ink">{review.context.rsi}</span></span>}

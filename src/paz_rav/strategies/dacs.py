@@ -63,8 +63,8 @@ class DACS:
 
         entry = short.mid - long.mid   # negative => small debit paid
         legs = [
-            Leg("sell", "call", short.strike, expiry=short_exp, iv=short.iv),
-            Leg("buy", "call", long.strike, expiry=long_exp, iv=long.iv),
+            Leg("sell", "call", short.strike, expiry=short_exp, iv=short.iv, delta=short.delta),
+            Leg("buy", "call", long.strike, expiry=long_exp, iv=long.iv, delta=long.delta),
         ]
         c = finalize(
             underlying=underlying, strategy=self.name, legs=legs, entry_credit=entry,

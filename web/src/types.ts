@@ -15,6 +15,7 @@ export interface Leg {
   quantity: number;
   expiry?: string | null;
   iv?: number | null;
+  delta?: number | null;
 }
 
 export interface Candidate {
@@ -46,7 +47,25 @@ export interface Review {
   explanation?: string;
   engine?: string;
   revisions?: number;
-  context?: { regime: string; iv_rank: number; rsi: number | null };
+  context?: {
+    regime: string;
+    iv_rank: number;
+    rsi: number | null;
+    spot?: number;
+    expected_move?: number;
+  };
+}
+
+export interface OpenAdvice {
+  decision: "open" | "wait" | "skip";
+  confidence?: number | null;
+  rationale: string;
+  analyst: { stance: string; confidence?: number | null; reasons: string[] };
+  critic: { stance: string; confidence?: number | null; reasons: string[] };
+  recalled?: RecalledCase[];
+  engine: "llm" | "deterministic";
+  computed_at: string;
+  error?: string;
 }
 
 export type CloseReason = "profit_target" | "stop_loss" | "time_stop" | "expired" | "manual";

@@ -130,6 +130,11 @@ export default function Suggestions({
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-ink-3 font-mono text-sm tabular-nums">{i + 1}</span>
                 <span className="font-mono font-bold text-lg tracking-tight text-ink">{c.underlying}</span>
+                {num(c.meta, "spot") != null && (
+                  <span className="text-xs font-mono text-ink-2 tabular-nums" title="מחיר הנכס בזמן הסריקה">
+                    {usdStrike(num(c.meta, "spot"))}
+                  </span>
+                )}
                 <span
                   className="text-xs font-mono px-2 py-0.5 rounded-full"
                   style={{ background: `${rail}22`, color: rail }}

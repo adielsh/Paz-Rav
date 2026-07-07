@@ -262,7 +262,8 @@ def create_app(
         out = await review(cands[idx], feature)
         if feature is not None:
             out["context"] = {"regime": feature.regime, "iv_rank": feature.iv_rank,
-                              "rsi": feature.rsi}
+                              "rsi": feature.rsi, "spot": feature.spot,
+                              "expected_move": feature.expected_move}
         return out
 
     @app.get("/api/payoff/{underlying}/{idx}")
@@ -418,6 +419,34 @@ def create_app(
         if advice is None:
             return {"error": "no advice (position closed or no market data)"}
         return advice
+
+    async def _open_advice_for(underlying: str, idx: int, force: bool) -> dict | None:
+        """Run the open-timing debate for one candidate: same three-model machinery as the
+        close advisor, pointed at entry. The rule committee stays the fast always-on filter;
+        this is the deep, on-demand second opinion (cached by setup signature)."""
+        from paz_rav.agents.analyst import review as analyst_review
+        from paz_rav.agents.open_advisor import advise_open
+
+        cands = await candidate_repo.latest(underlying, config.top_n)
+        if idx < 0 or idx >= len(cands):
+            return None
+        candidate = cands[idx]
+        feature = await feature_store.get(underlying)
+        verdict = analyst_review(candidate, feature)[0]
+        return await advise_open(candidate, feature=feature, verdict=verdict,
+                                 memory=case_memory, force=force)
+
+    @app.get("/api/open-advice/{underlying}/{idx}")
+    async def api_open_advice(underlying: str, idx: int) -> dict:
+        """Should I open this candidate now? Cached three-LLM debate (Analyst/Critic/Decider)."""
+        advice = await _open_advice_for(underlying, idx, force=False)
+        return advice if advice is not None else {"error": "no such candidate"}
+
+    @app.post("/api/open-advice/{underlying}/{idx}")
+    async def api_open_advice_now(underlying: str, idx: int) -> dict:
+        """"Check now" — force a fresh open-timing debate, bypassing the cache."""
+        advice = await _open_advice_for(underlying, idx, force=True)
+        return advice if advice is not None else {"error": "no such candidate"}
 
     @app.get("/api/reflection")
     async def api_reflection_latest() -> dict:
