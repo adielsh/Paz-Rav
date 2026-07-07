@@ -336,6 +336,57 @@ def create_app(
             return {"error": "position not found or already closed"}
         return _position_to_dict(closed)
 
+    async def _advice_for(pos: Position, force: bool) -> dict | None:
+        """Run the close-timing debate for one OPEN position over deterministic inputs.
+
+        Gathers the numbers the models are allowed to see — current spot (from the latest
+        feature), the feature itself (IV rank / regime / RSI) and recent closes (duck-typed
+        off the feed) — and hands them to agents/close_advisor, which computes the
+        situation, runs the Analyst/Critic/Decider debate (cached by market-state
+        signature) and traces it to Langfuse. Advisory only, like the Exit Manager.
+        """
+        from paz_rav.agents import advise
+
+        if pos.status != "open":
+            return None
+        f = await feature_store.get(pos.underlying)
+        spot = f.spot if f else None
+        if spot is None:
+            return None
+        recent = None
+        if hasattr(feed, "recent_closes"):
+            try:
+                recent = await feed.recent_closes(pos.underlying, 30)
+            except Exception:
+                recent = None
+        return await advise(pos, spot=spot, today=today or date.today(), feature=f,
+                            recent_closes=recent, force=force)
+
+    @app.get("/api/positions/{position_id}/close-advice")
+    async def api_close_advice(position_id: str) -> dict:
+        """Should I close this open position now? A real Analyst/Critic/Decider LLM debate
+        over pre-computed numbers (see agents/close_advisor). Cached by market-state
+        signature, so ordinary dashboard refreshes are instant and don't re-spend on LLM
+        calls — a materially new state (profit band, DTE, distance-to-stop) recomputes."""
+        pos = await position_repo.get(position_id)
+        if pos is None:
+            return {"error": "position not found"}
+        advice = await _advice_for(pos, force=False)
+        if advice is None:
+            return {"error": "no advice (position closed or no market data)"}
+        return advice
+
+    @app.post("/api/positions/{position_id}/close-advice")
+    async def api_close_advice_now(position_id: str) -> dict:
+        """"Check now" — force a fresh debate, bypassing the state-signature cache."""
+        pos = await position_repo.get(position_id)
+        if pos is None:
+            return {"error": "position not found"}
+        advice = await _advice_for(pos, force=True)
+        if advice is None:
+            return {"error": "no advice (position closed or no market data)"}
+        return advice
+
     @app.websocket("/ws")
     async def ws(websocket: WebSocket) -> None:
         # Browsers can't send custom headers on a WebSocket handshake, so the token

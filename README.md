@@ -2,15 +2,17 @@
 
 > Finds the **right options strategy, at the right time, for the right duration** — and
 > proves the edge in backtest before a dollar is risked. Deterministic Python does all
-> the math; a lean two-agent AI layer adds judgment and a full audit trail. Nothing on
-> screen is guessed.
+> the math; a lean AI layer adds judgment, a **genuine three-model debate on when to
+> close**, and a full audit trail. Nothing on screen is guessed.
 
 ## What it does
 
 Scans a fixed universe of underlyings, ranks **Iron Condor** and **DACS 1.0** candidates
 deterministically, runs each past an AI committee (Analyst proposes, Critic argues
-against), and serves a live dashboard where you open paper positions and get told
-exactly when to close them.
+against), and serves a live dashboard where you open paper positions. When you ask
+**"when should I close this?"**, three real language models debate it — an Analyst, a
+Critic who argues the opposite, and a Decider who weighs both — over numbers Python has
+already computed.
 
 **The one rule that matters:** every greek, IV, price, POP, and P&L comes from
 deterministic Python — the AI only ever reasons over numbers already computed, never
@@ -28,10 +30,13 @@ flowchart LR
         BUILDER["builder<br/>score Iron Condor / DACS"]
         POSITIONS["positions<br/>exit rules"]
     end
-    subgraph AI["AI committee (LangGraph)"]
+    subgraph AI["AI committee"]
         ANALYST["Analyst"]
         CRITIC["Critic"]
         EXPLAINER["Explainer<br/>(Claude)"]
+    end
+    subgraph CLOSE["Close-timing debate — 3 real LLMs on LangGraph"]
+        CA["Analyst → Critic → Decider<br/>(conditional revision loop)"]
     end
     subgraph Store["Storage"]
         REDIS[("Redis<br/>hot state")]
@@ -49,12 +54,18 @@ flowchart LR
     ANALYTICS --> REDIS
     BUILDER --> PG
     POSITIONS --> PG
+    POSITIONS --> CA
     ANALYST -.-> LF
     CRITIC -.-> LF
     POSITIONS -.-> LF
+    CA -.-> LF
     REDIS --> API
     PG --> API
     API <--> WEB
+
+    classDef llm fill:#efeaff,stroke:#7c4dff,color:#231a4d;
+    class CA llm;
+    style CLOSE fill:#f7f4ff,stroke:#7c4dff;
 ```
 
 ## How a trade flows through the system
@@ -83,6 +94,62 @@ flowchart TD
     P --> A
 ```
 
+## "When should I close?" — a real three-model debate
+
+This is the one place a language model is trusted to *reason toward a decision*, not just
+phrase one. Think of it like **asking three advisors before selling a house** 🏠:
+
+- 🟢 the **Analyst** says what he'd do,
+- 🔴 the **Critic** deliberately argues the *opposite*, so nothing is missed,
+- ⚖️ the **Decider** listens to both and calls it — and if he's *not sure*, he sends it
+  back to the Analyst to think again, once.
+
+Crucially, **the three only ever argue over numbers Python already computed** (profit so
+far, days left, distance to the stop, volatility, recent price move) — they never invent a
+number. **LangGraph** runs the loop; **Langfuse** remembers every debate.
+
+```mermaid
+flowchart TB
+    BTN(["🔘 You click<br/>'When should I close?'"])
+    NUMS["📐 Python computes the numbers<br/>P&L · days left · distance to stop · IV · trend"]
+
+    subgraph DEBATE["🧠 LangGraph — three real language models argue"]
+        direction TB
+        A["🟢 Analyst<br/>'here's what I'd do'"]
+        C["🔴 Critic<br/>argues the opposite — on purpose"]
+        D{"⚖️ Decider<br/>weighs both sides"}
+        A --> C --> D
+        D -.->|rethink once if unsure| A
+    end
+
+    OUT["💬 Hold · Close · Reduce<br/>+ a plain-language reason"]
+    LF["📊 Langfuse<br/>remembers the whole debate"]
+
+    BTN --> NUMS --> A
+    D -->|confident| OUT
+    D -.-> LF
+
+    classDef start fill:#fff3d6,stroke:#e0a020,color:#5a3d00;
+    classDef code fill:#e7f0fe,stroke:#2e7df6,color:#123;
+    classDef analyst fill:#e2f5ee,stroke:#12a37f,color:#0a3;
+    classDef critic fill:#fde7e6,stroke:#e0554d,color:#5a1512;
+    classDef decider fill:#efeaff,stroke:#7c4dff,color:#231a4d;
+    classDef out fill:#e2f5ee,stroke:#12a37f,color:#093;
+    classDef ops fill:#f0ebff,stroke:#7c4dff,color:#212;
+    class BTN start;
+    class NUMS code;
+    class A analyst;
+    class C critic;
+    class D decider;
+    class OUT out;
+    class LF ops;
+```
+
+**Advisory only** — like the rest of the system, it never closes anything itself; the real
+fill happens at your broker. Repeated dashboard refreshes are served from a cache keyed on
+the market state, so the debate only re-runs when something material changes (or you click
+"check now").
+
 ## Quick start
 
 ```bash
@@ -102,6 +169,7 @@ options (running from source, real persistence, cloud deployment) are in
 | 1 | Deterministic core + live dashboard | ✅ done |
 | 2 | Two-agent AI judgment (Analyst + Critic, LangGraph, Langfuse) | ✅ done |
 | 3 | Position lifecycle + advisory exit alerts | ✅ done |
+| 3.5 | **Close-timing debate — 3 real LLMs (Analyst/Critic/Decider) on LangGraph** | ✅ done |
 | 4 | Real broker connection, hardening | ⏳ not started |
 
 Details, what's proven vs. what's a known gap, and backtest results:

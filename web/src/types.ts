@@ -51,6 +51,26 @@ export interface Review {
 
 export type CloseReason = "profit_target" | "stop_loss" | "time_stop" | "expired" | "manual";
 
+export interface AdviceStance {
+  stance: "hold" | "close" | "reduce";
+  confidence?: number | null;
+  reasons: string[];
+}
+
+export interface CloseAdvice {
+  decision: "hold" | "close" | "reduce";
+  confidence?: number | null;
+  rationale: string;
+  analyst: AdviceStance;
+  critic: AdviceStance;
+  situation: Record<string, number | string | number[] | null>;
+  engine: "llm" | "deterministic";
+  orchestration?: "langgraph" | "sequential" | "deterministic";
+  revisions?: number;
+  computed_at: string;
+  error?: string;
+}
+
 export interface Position {
   id: string;
   underlying: string;

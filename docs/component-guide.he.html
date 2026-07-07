@@ -1,0 +1,509 @@
+<title>Paz Rav — מדריך הרכיבים</title>
+<meta name="color-scheme" content="dark light">
+<style>
+  :root {
+    --bg: #f5f7fa;
+    --panel: #ffffff;
+    --panel-2: #eef1f6;
+    --line: #dbe1ea;
+    --ink: #12151c;
+    --ink-2: #4a5468;
+    --ink-3: #8992a3;
+    --gold: #b4863b;
+    --blue: #2e7df6;
+    --violet: #6e5cd9;
+    --teal: #12886f;
+    --shadow: 0 1px 2px rgba(20,25,40,.04), 0 8px 24px -12px rgba(20,25,40,.12);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #06080d;
+      --panel: #10151f;
+      --panel-2: #161d2a;
+      --line: #262f40;
+      --ink: #e9eef7;
+      --ink-2: #98a2b8;
+      --ink-3: #5c6579;
+      --gold: #d9ae5b;
+      --blue: #5b9ee8;
+      --violet: #9c8cf0;
+      --teal: #38bfa0;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 32px -16px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #06080d; --panel: #10151f; --panel-2: #161d2a; --line: #262f40;
+    --ink: #e9eef7; --ink-2: #98a2b8; --ink-3: #5c6579;
+    --gold: #d9ae5b; --blue: #5b9ee8; --violet: #9c8cf0; --teal: #38bfa0;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 32px -16px rgba(0,0,0,.6);
+  }
+  :root[data-theme="light"] {
+    --bg: #f5f7fa; --panel: #ffffff; --panel-2: #eef1f6; --line: #dbe1ea;
+    --ink: #12151c; --ink-2: #4a5468; --ink-3: #8992a3;
+    --gold: #b4863b; --blue: #2e7df6; --violet: #6e5cd9; --teal: #12886f;
+    --shadow: 0 1px 2px rgba(20,25,40,.04), 0 8px 24px -12px rgba(20,25,40,.12);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    direction: rtl;
+    font-family: "Segoe UI", "Arial Hebrew", "Noto Sans Hebrew", system-ui, -apple-system, sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+    -webkit-font-smoothing: antialiased;
+  }
+  code, .mono, .chip {
+    font-family: Consolas, "JetBrains Mono", "Courier New", monospace;
+    direction: ltr;
+    unicode-bidi: isolate;
+  }
+
+  .page { max-width: 780px; margin: 0 auto; padding: 56px 24px 96px; }
+
+  /* ---------- Header ---------- */
+  .masthead { margin-bottom: 8px; }
+  .eyebrow {
+    font-family: Consolas, monospace;
+    direction: ltr;
+    unicode-bidi: isolate;
+    display: inline-block;
+    font-size: 12px;
+    letter-spacing: .12em;
+    color: var(--ink-3);
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+  h1 {
+    font-size: clamp(28px, 5vw, 38px);
+    font-weight: 700;
+    letter-spacing: -.01em;
+    margin: 0 0 12px;
+    text-wrap: balance;
+  }
+  .lede {
+    font-size: 18px;
+    line-height: 1.7;
+    color: var(--ink-2);
+    max-width: 62ch;
+    margin: 0 0 28px;
+  }
+
+  /* ---------- Principle callout ---------- */
+  .principle {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 20px 24px;
+    box-shadow: var(--shadow);
+    margin-bottom: 40px;
+    position: relative;
+    overflow: hidden;
+  }
+  .principle::before {
+    content: "";
+    position: absolute; inset-block: 0; inset-inline-start: 0;
+    width: 4px;
+    background: var(--gold);
+  }
+  .principle .label {
+    font-family: Consolas, monospace;
+    direction: ltr;
+    unicode-bidi: isolate;
+    font-size: 11px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--gold);
+    display: block;
+    margin-bottom: 8px;
+  }
+  .principle p { margin: 0; font-size: 16.5px; color: var(--ink); }
+
+  /* ---------- Table of contents ---------- */
+  nav.toc {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    margin-bottom: 56px;
+  }
+  nav.toc a {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    color: var(--ink-2);
+    text-decoration: none;
+    font-size: 14px;
+    background: var(--panel);
+    transition: border-color .15s ease, color .15s ease, transform .15s ease;
+  }
+  nav.toc a:hover { color: var(--ink); border-color: var(--dot, var(--ink-3)); transform: translateX(-2px); }
+  nav.toc a:focus-visible { outline: 2px solid var(--dot, var(--gold)); outline-offset: 2px; }
+  nav.toc .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dot); flex-shrink: 0; }
+
+  /* ---------- Layer groups ---------- */
+  .layer { margin-bottom: 52px; scroll-margin-top: 24px; }
+  .layer-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 6px;
+  }
+  .layer-head .dot {
+    width: 11px; height: 11px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent);
+    flex-shrink: 0;
+  }
+  .layer-head h2 {
+    font-size: 22px;
+    font-weight: 700;
+    margin: 0;
+    letter-spacing: -.005em;
+  }
+  .layer-sub {
+    color: var(--ink-3);
+    font-size: 14.5px;
+    margin: 0 0 20px 23px;
+  }
+
+  .cards { display: flex; flex-direction: column; gap: 12px; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 18px 22px;
+    box-shadow: var(--shadow);
+    position: relative;
+  }
+  .card::before {
+    content: "";
+    position: absolute; inset-block: 14px; inset-inline-end: 0;
+    width: 3px; border-radius: 3px;
+    background: var(--accent);
+  }
+  .card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    margin-bottom: 8px;
+  }
+  .card-head h3 { font-size: 16.5px; font-weight: 700; margin: 0; }
+  .chip {
+    font-size: 12.5px;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 13%, var(--panel-2));
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+    border-radius: 6px;
+    padding: 2px 8px;
+    white-space: nowrap;
+  }
+  .card p { margin: 0; color: var(--ink-2); font-size: 15px; }
+  .card p + p { margin-top: 8px; }
+  .card strong { color: var(--ink); font-weight: 600; }
+
+  .external .card::before { background: var(--ink-3); }
+  .external .chip { color: var(--ink-2); background: var(--panel-2); border-color: var(--line); }
+
+  /* connector between layers */
+  .connector {
+    width: 1px;
+    height: 28px;
+    background: linear-gradient(var(--line), transparent);
+    margin: 0 auto;
+  }
+
+  footer {
+    margin-top: 64px;
+    padding-top: 24px;
+    border-top: 1px solid var(--line);
+    color: var(--ink-3);
+    font-size: 13.5px;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .card, nav.toc a { transition: transform .15s ease, border-color .15s ease; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+
+  @media (max-width: 560px) {
+    nav.toc { grid-template-columns: 1fr; }
+    .page { padding: 40px 16px 72px; }
+  }
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <span class="eyebrow">Paz Rav · Component Guide</span>
+    <h1>מפת הרכיבים של המערכת</h1>
+    <p class="lede">
+      כל חלק בפרויקט, למה הוא קיים, ולמה הוא לא מיותר. מסודר לפי השכבות שדרכן עובר כל
+      נתון — ממקור השוק הגולמי ועד למסך שלך.
+    </p>
+  </header>
+
+  <div class="principle">
+    <span class="label">The one rule</span>
+    <p>
+      כל יוון, כל תנודתיות גלומה, כל מחיר וכל רווח־והפסד מחושבים בקוד דטרמיניסטי טהור.
+      הבינה המלאכותית לא מייצרת אף מספר בעצמה — היא רק מנמקת על מספרים שכבר חושבו.
+    </p>
+  </div>
+
+  <nav class="toc" aria-label="ניווט מהיר">
+    <a href="#source" style="--dot: var(--ink-3)"><span class="dot"></span>מקור הנתונים</a>
+    <a href="#core" style="--dot: var(--gold)"><span class="dot"></span>הליבה הדטרמיניסטית</a>
+    <a href="#storage" style="--dot: var(--blue)"><span class="dot"></span>אחסון</a>
+    <a href="#ai" style="--dot: var(--violet)"><span class="dot"></span>שיפוט הבינה המלאכותית</a>
+    <a href="#positions" style="--dot: var(--teal)"><span class="dot"></span>פוזיציות</a>
+    <a href="#serving" style="--dot: var(--ink-3)"><span class="dot"></span>שרת וממשק</a>
+  </nav>
+
+  <!-- ================= DATA SOURCE ================= -->
+  <section class="layer external" id="source" style="--accent: var(--ink-3)">
+    <div class="layer-head"><span class="dot"></span><h2>מקור הנתונים</h2></div>
+    <p class="layer-sub">חיצוני לפרויקט — כאן הכל מתחיל</p>
+    <div class="cards">
+      <div class="card">
+        <div class="card-head">
+          <h3>ספק נתוני שוק</h3>
+          <span class="chip">yfinance · IBKR</span>
+        </div>
+        <p>
+          מקור חינמי ומושהה בכ־15 דקות, טוב לפיתוח ולבדיקה. לצידו מתוכנן חיבור לברוקר
+          עם נתונים בזמן אמת, כשיהיה בכך צורך.
+        </p>
+        <p>
+          שני המקורות מסתתרים מאחורי ממשק אחיד אחד, כך שהחלפת ספק היא שינוי של שורה
+          אחת ולא שכתוב של הפרויקט.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <div class="connector"></div>
+
+  <!-- ================= DETERMINISTIC CORE ================= -->
+  <section class="layer" id="core" style="--accent: var(--gold)">
+    <div class="layer-head"><span class="dot"></span><h2>הליבה הדטרמיניסטית</h2></div>
+    <p class="layer-sub">בלי בינה מלאכותית בכלל — הרווח האמיתי של המערכת נמצא כאן</p>
+    <div class="cards">
+
+      <div class="card">
+        <div class="card-head"><h3>מנוע כמותי</h3><span class="chip">quant</span></div>
+        <p>
+          מחשב יוונים (דלתא, גמא, ת'טא, וגה), תנודתיות גלומה, וסבירות רווח לכל מבנה
+          אופציות אפשרי — כולל מבנים מרובי־תפוגות כמו DACS.
+        </p>
+        <p>
+          זה החלק הרגיש ביותר בכל הפרויקט: אם מספר כאן שגוי, כל דירוג, כל המלצה וכל
+          החלטה שנבנית עליו חסרת משמעות.
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>אנליטיקה</h3><span class="chip">analytics</span></div>
+        <p>
+          הופכת שרשרת אופציות גולמית לתמונת מצב אחת: דירוג תנודתיות, משטר שוק (טווח או
+          מגמה), וחוזק יחסי.
+        </p>
+        <p>
+          זו השכבה שקובעת אם השוק בכלל <strong>מתאים</strong> לאסטרטגיה — עוד לפני שכל
+          סוכן בינה מלאכותית נכנס לתמונה.
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>אסטרטגיות ובנאי</h3>
+          <span class="chip">strategies · builder</span>
+        </div>
+        <p>
+          כאן בנויות שתי האסטרטגיות עצמן — Iron Condor ו־DACS — מאחורי ממשק משותף אחד,
+          והבנאי מדרג את כל המועמדים משתיהן על סולם ניקוד יחיד.
+        </p>
+        <p>
+          הוספת אסטרטגיה שלישית בעתיד לא תדרוש לגעת בקוד הקיים, רק להוסיף מחלקה חדשה
+          שנרשמת מעצמה.
+        </p>
+      </div>
+
+    </div>
+  </section>
+
+  <div class="connector"></div>
+
+  <!-- ================= STORAGE ================= -->
+  <section class="layer" id="storage" style="--accent: var(--blue)">
+    <div class="layer-head"><span class="dot"></span><h2>אחסון</h2></div>
+    <p class="layer-sub">שני מסדי נתונים, לשני תפקידים שונים לגמרי</p>
+    <div class="cards">
+
+      <div class="card">
+        <div class="card-head"><h3>מצב חי</h3><span class="chip">Redis</span></div>
+        <p>
+          "מה נכון עכשיו." זיכרון מהיר שמחזיק את היוונים העדכניים ודוחף עדכונים ללוח
+          הבקרה ברגע שהם משתנים.
+        </p>
+        <p>
+          מסד נתונים רגיל איטי מדי בשביל לדחוף עדכון בכל שנייה — בדיוק סוג העומס שזיכרון
+          כזה נועד אליו.
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>מצב עמיד</h3><span class="chip">Postgres</span></div>
+        <p>
+          "מה קרה בפועל." שומר לצמיתות את המועמדים שנסרקו ואת הפוזיציות שנפתחו ונסגרו,
+          כך שכלום לא נעלם כשהשרת מופעל מחדש.
+        </p>
+        <p>
+          Redis הוא השולחן; Postgres הוא ארון התיוק. אין טעם לתייק כל עדכון חולף, אבל
+          חובה לתייק לצמיתות כל פוזיציה אמיתית שנפתחה.
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>ערוץ הפצה</h3><span class="chip">bus</span></div>
+        <p>
+          מחבר בין השכבה שמחשבת לשכבה שמציגה. לוח הבקרה מקבל עדכון ברגע שיש שינוי, בלי
+          לשאול כל הזמן "יש חדש?".
+        </p>
+      </div>
+
+    </div>
+  </section>
+
+  <div class="connector"></div>
+
+  <!-- ================= AI JUDGMENT ================= -->
+  <section class="layer" id="ai" style="--accent: var(--violet)">
+    <div class="layer-head"><span class="dot"></span><h2>שיפוט הבינה המלאכותית</h2></div>
+    <p class="layer-sub">שני סוכנים בלבד — לא אפס, לא שבעה</p>
+    <div class="cards">
+
+      <div class="card">
+        <div class="card-head"><h3>הסוכן המנתח</h3><span class="chip">Analyst</span></div>
+        <p>
+          קוד מבוסס־כללים בלבד, <strong>לא</strong> קריאה למודל שפה. נותן פסק דין
+          ראשוני — לקחת, להיזהר, או לוותר — עם נימוק, על סמך תנאים שכבר חושבו.
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>סוכן המבקר</h3><span class="chip">Critic</span></div>
+        <p>
+          גם הוא מבוסס־כללים בלבד. תפקידו למצוא את הטיעון הכי חזק <strong>נגד</strong>
+          העסקה.
+        </p>
+        <p>
+          מודל שמציע ומבקר את עצמו באותה נשימה נוטה לביטחון־יתר — הפרדה בין הצעה
+          לביקורת, בשתי קריאות נפרדות, תופסת יותר עסקאות גרועות.
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>הסוכן המסביר</h3><span class="chip">Explainer · Claude</span></div>
+        <p>
+          המקום היחיד בכל הפרויקט שבו מודל שפה אמיתי נקרא בפועל. תפקידו רק לנסח בשפה
+          טבעית את מה שכבר הוחלט — הוא לעולם לא מחליט דבר, ולעולם לא מחשב מספר.
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>הלולאה בין הסוכנים</h3><span class="chip">LangGraph</span></div>
+        <p>
+          לא עוד מסגרת עבודה כללית לבינה מלאכותית, אלא פתרון לבעיה אחת וממוקדת: אם
+          המבקר מתנגד בחומרה, ההחלטה חוזרת לסוכן המנתח לתיקון אחד.
+        </p>
+        <p>
+          זו הסיבה שיש בדיוק שני סוכנים ולא יותר — כל סוכן נוסף מוסיף עלות ותזמון
+          לשיפוט שכללים דטרמיניסטיים כבר מכסים היום.
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>מעקב וניקוד</h3><span class="chip">Langfuse</span></div>
+        <p>
+          לא רק תיעוד. מתעד כל החלטה, וכשפוזיציה נסגרת בפועל — הרווח וההפסד האמיתיים
+          נרשמים בחזרה בדיוק על אותה החלטה שיצרה אותם.
+        </p>
+        <p>
+          זו לולאת הלמידה הסגורה: ההבדל בין בוט שבוחר עסקאות לבין מערכת שיודעת אילו
+          מהשיפוטים שלה באמת הרוויחו כסף.
+        </p>
+      </div>
+
+    </div>
+  </section>
+
+  <div class="connector"></div>
+
+  <!-- ================= POSITIONS ================= -->
+  <section class="layer" id="positions" style="--accent: var(--teal)">
+    <div class="layer-head"><span class="dot"></span><h2>פוזיציות</h2></div>
+    <p class="layer-sub">ייעוץ בלבד — לעולם לא ביצוע אוטומטי</p>
+    <div class="cards">
+      <div class="card">
+        <div class="card-head"><h3>מחזור החיים של פוזיציה</h3><span class="chip">positions · exit manager</span></div>
+        <p>
+          שומר את הפוזיציה מרגע הפתיחה. מנגנון היציאה <strong>אף פעם לא סוגר פוזיציה
+          בעצמו</strong> — הוא רק מסמן אזהרה, כי המילוי האמיתי קורה אצל הברוקר שלך.
+        </p>
+        <p>
+          הסגירה בפועל היא תמיד פעולה מודעת שלך, עם המחיר האמיתי שקיבלת — כדי שהמערכת
+          לעולם לא תדמיין רווח או הפסד שלא קרה באמת.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <div class="connector"></div>
+
+  <!-- ================= SERVING ================= -->
+  <section class="layer" id="serving" style="--accent: var(--ink-3)">
+    <div class="layer-head"><span class="dot"></span><h2>שרת, ממשק ותשתית</h2></div>
+    <p class="layer-sub">מה שהופך את כל זה לדבר שאפשר לפתוח בדפדפן</p>
+    <div class="cards">
+
+      <div class="card">
+        <div class="card-head"><h3>שרת האפליקציה</h3><span class="chip">FastAPI · WebSocket</span></div>
+        <p>
+          השרת היחיד שהדפדפן מדבר איתו. חושף קריאות רגילות ואפיק לדחיפת עדכונים חיים
+          בלי צורך לרענן את הדף.
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>לוח הבקרה</h3><span class="chip">React</span></div>
+        <p>
+          הממשק החזותי: רשימת המועמדים המדורגים, תרשים תשלום, ופאנל הפוזיציות הפתוחות.
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>הרצה בקונטיינרים</h3><span class="chip">Docker Compose</span></div>
+        <p>
+          מריץ את כל החלקים בפקודה אחת. חשוב לדעת: זו אותה תמונה בדיוק שתעלה לענן
+          בעתיד — הרצה מקומית ופריסה אמיתית משתמשות באותו קוד, לא בשני מסלולים נפרדים
+          שעלולים להתבדר.
+        </p>
+      </div>
+
+    </div>
+  </section>
+
+  <footer>
+    Paz Rav — מנוע אסטרטגיות אופציות בזמן אמת · Iron Condor ו־DACS 1.0
+  </footer>
+
+</div>

@@ -58,6 +58,47 @@ used. **Langfuse** traces every decision and lets you score the realized outcome
 onto it — the difference between a bot that picks trades and a system that learns which
 of its own judgments were good.
 
+## The close-timing debate — where a real LLM finally decides
+
+The opening Analyst/Critic are deterministic rule code (no LLM) — cheap to test and
+backtest. The **close-timing advisor** (`agents/close_advisor.py`) is different, and
+deliberately so: it's the one place a language model is trusted to *reason toward a
+decision*, because "should I close now?" weighs genuinely conflicting, contextual signals
+("48% of max profit, but 9 DTE and spot drifting toward the short") that a single fixed
+rule can't.
+
+When the user asks, **three real Claude calls** run as a LangGraph graph:
+
+```
+analyst → critic → decider → (if the Decider's confidence < 0.5 and we haven't
+                              revised yet: loop back to the Analyst with the Critic's
+                              objection, once) → done
+```
+
+- **Analyst** — reads the situation, argues hold vs. close.
+- **Critic** — the *איפכא מסתברא*: argues the opposite of the Analyst, to surface the
+  overlooked risk (or opportunity).
+- **Decider** — weighs both, returns `hold | close | reduce` + confidence + rationale.
+
+This is where **LangGraph genuinely earns its place** — it orchestrates *language-model*
+nodes (not rule nodes) through a branching graph with a real conditional loop; a single
+agent wouldn't need one. The debate degrades to a plain sequential pass if `langgraph`
+isn't installed, and to a deterministic rule-based "debate" if there's no
+`ANTHROPIC_API_KEY` — so the dashboard always answers and the tests stay offline.
+
+Two invariants keep it honest:
+
+1. **Every number is pre-computed in Python** (`build_situation()` gathers mark-to-market
+   P&L, DTE, distance-to-stop, IV rank, regime, recent move). The models only weigh
+   numbers; **forced tool-use** (structured JSON output) means a model literally cannot
+   return free-form prose or a made-up figure — only a stance + reasons that cite the
+   given numbers.
+2. **Advisory only**, like the Exit Manager — it never closes anything; the real fill is
+   at the broker. Cost is bounded by a cache keyed on a coarse market-state signature, so
+   ordinary dashboard refreshes are instant and only a material change (or an explicit
+   "check now") re-runs the debate. Each debate is traced to Langfuse on the position's
+   original opening trace.
+
 ## Concurrency model
 
 | Work | Worker | Why |

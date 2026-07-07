@@ -64,6 +64,28 @@ export function IconClock(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function IconScale(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)}>
+      <path d="M12 3v18" />
+      <path d="M7 21h10" />
+      <path d="M5 7h14l-2-3H7L5 7Z" />
+      <path d="M5 7l-3 6a3 3 0 0 0 6 0L5 7Z" />
+      <path d="M19 7l-3 6a3 3 0 0 0 6 0l-3-6Z" />
+    </svg>
+  );
+}
+
+export function IconRefresh(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)}>
+      <polyline points="23 4 23 10 17 10" />
+      <polyline points="1 20 1 14 7 14" />
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+    </svg>
+  );
+}
+
 export function IconBox(props: SVGProps<SVGSVGElement>) {
   return (
     <svg {...base(props)}>

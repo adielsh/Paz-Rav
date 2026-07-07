@@ -1,9 +1,25 @@
-import { useState } from "react";
-import type { Position } from "../types";
+import { useEffect, useState } from "react";
+import type { CloseAdvice, Position } from "../types";
 import { closeReasonLabel, strategyColor, strategyLabel } from "../lib";
 import { colors } from "../theme";
 import LegLadder from "./LegLadder";
-import { IconAlertTriangle, IconArrowDownCircle, IconArrowUpCircle, IconCheckCircle } from "./Icon";
+import {
+  IconAlertTriangle,
+  IconArrowDownCircle,
+  IconArrowUpCircle,
+  IconCheckCircle,
+  IconClock,
+  IconRefresh,
+  IconScale,
+} from "./Icon";
+
+const DECISION: Record<string, { label: string; cls: string; color: string }> = {
+  hold: { label: "החזק", cls: "bg-good/15 text-good border-good/40", color: colors.good },
+  close: { label: "שקול לסגור", cls: "bg-bad/15 text-bad border-bad/40", color: colors.bad },
+  reduce: { label: "הקטן פוזיציה", cls: "bg-warn/15 text-warn border-warn/40", color: colors.warn },
+};
+
+const STANCE_LABEL: Record<string, string> = { hold: "החזק", close: "סגור", reduce: "הקטן" };
 
 const ALERT_LABEL: Record<string, string> = {
   profit_target: "הגיע ליעד רווח — שקול לסגור",
@@ -125,12 +141,160 @@ function CloseForm({
   );
 }
 
+function Stance({ title, s }: { title: string; s: CloseAdvice["analyst"] }) {
+  const conf = s.confidence != null ? ` · ${Math.round(s.confidence * 100)}%` : "";
+  return (
+    <div>
+      <div className="text-[11px] font-mono text-ink-3 mb-1">
+        {title} — <span className="text-ink-2">{STANCE_LABEL[s.stance] ?? s.stance}</span>
+        {conf}
+      </div>
+      <ul className="space-y-0.5">
+        {s.reasons.map((r, i) => (
+          <li key={i} className="text-[12px] text-ink-2 leading-snug flex gap-1.5">
+            <span className="text-ink-3 shrink-0">•</span>
+            <span>{r}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function CloseAdvicePanel({
+  positionId,
+  onAdvice,
+}: {
+  positionId: string;
+  onAdvice: (id: string, force: boolean) => Promise<CloseAdvice>;
+}) {
+  const [advice, setAdvice] = useState<CloseAdvice | null>(null);
+  const [busy, setBusy] = useState(true);
+  const [open, setOpen] = useState(false);
+  const [err, setErr] = useState(false);
+
+  const load = async (force: boolean) => {
+    setBusy(true);
+    setErr(false);
+    try {
+      const a = await onAdvice(positionId, force);
+      if (a.error) setErr(true);
+      else setAdvice(a);
+    } catch {
+      setErr(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Fetch once on mount (server serves it from the state-signature cache, so ordinary
+  // refreshes are instant and don't re-spend on the LLM debate). "בדוק עכשיו" forces one.
+  useEffect(() => {
+    void load(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [positionId]);
+
+  const d = advice ? DECISION[advice.decision] ?? DECISION.hold : null;
+
+  return (
+    <div className="mt-3 pt-3 border-t border-line/70" dir="rtl">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-ink-3">
+          <IconScale width={13} height={13} />
+          מתי לסגור?
+        </span>
+
+        {busy && !advice && <span className="text-[12px] text-ink-3">מתייעץ…</span>}
+
+        {err && !advice && (
+          <span className="text-[12px] text-ink-3">אין ייעוץ כרגע</span>
+        )}
+
+        {d && advice && (
+          <>
+            <span className={`inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full border ${d.cls}`}>
+              {advice.decision === "hold" ? (
+                <IconCheckCircle width={13} height={13} />
+              ) : (
+                <IconAlertTriangle width={13} height={13} />
+              )}
+              {d.label}
+              {advice.confidence != null && (
+                <span className="opacity-70 font-mono">{Math.round(advice.confidence * 100)}%</span>
+              )}
+            </span>
+            <span
+              className="text-[10px] font-mono px-1.5 py-0.5 rounded text-ink-3 border border-line"
+              title={
+                advice.engine === "llm"
+                  ? advice.orchestration === "langgraph"
+                    ? "דיבייט של 3 מודלי שפה, מתוזמר ב-LangGraph"
+                    : "דיבייט של 3 מודלי שפה (סדרתי)"
+                  : "הערכה דטרמיניסטית (ללא מפתח מודל)"
+              }
+            >
+              {advice.engine === "llm"
+                ? advice.orchestration === "langgraph"
+                  ? "LangGraph · 3 LLMs"
+                  : "AI debate"
+                : "rule-based"}
+            </span>
+            {!!advice.revisions && advice.revisions > 0 && (
+              <span
+                className="inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded text-accent border border-accent/40 bg-accent/10"
+                title="המכריע לא היה בטוח — ההחלטה חזרה למנתח לסבב אחד"
+              >
+                <IconRefresh width={10} height={10} />
+                revised
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => setOpen((v) => !v)}
+              className="text-[11px] font-mono text-ink-2 hover:text-ink underline decoration-dotted underline-offset-2 mr-auto"
+            >
+              {open ? "הסתר" : "פרטים"}
+            </button>
+            <button
+              type="button"
+              onClick={() => load(true)}
+              disabled={busy}
+              className="inline-flex items-center gap-1 text-[11px] font-mono text-ink-2 hover:text-ink disabled:opacity-40"
+              title="הרץ דיבייט חדש עכשיו"
+            >
+              <IconRefresh width={12} height={12} />
+              {busy ? "בודק…" : "בדוק עכשיו"}
+            </button>
+          </>
+        )}
+      </div>
+
+      {open && advice && (
+        <div className="mt-2.5 space-y-2.5">
+          <p className="text-[13px] text-ink leading-relaxed">{advice.rationale}</p>
+          <div className="grid sm:grid-cols-2 gap-3 p-2.5 rounded-lg bg-panel2/60 border border-line">
+            <Stance title="מנתח" s={advice.analyst} />
+            <Stance title="מבקר (איפכא מסתברא)" s={advice.critic} />
+          </div>
+          <div className="text-[10px] font-mono text-ink-3 flex items-center gap-1.5">
+            <IconClock width={11} height={11} />
+            חושב {new Date(advice.computed_at).toLocaleTimeString("he-IL")} · המספרים חושבו
+            דטרמיניסטית; המודלים רק שוקלים אותם. ייעוץ בלבד.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PositionCard({
   p,
   onClose,
+  onAdvice,
 }: {
   p: Position;
   onClose: (id: string, exitCredit: number) => Promise<void>;
+  onAdvice: (id: string, force: boolean) => Promise<CloseAdvice>;
 }) {
   const [closing, setClosing] = useState(false);
   const isOpen = p.status === "open";
@@ -209,6 +373,8 @@ function PositionCard({
         )}
       </div>
 
+      {isOpen && <CloseAdvicePanel positionId={p.id} onAdvice={onAdvice} />}
+
       {closing && (
         <CloseForm
           onConfirm={async (exitCredit) => {
@@ -225,9 +391,11 @@ function PositionCard({
 export default function Positions({
   positions,
   onClose,
+  onAdvice,
 }: {
   positions: Position[];
   onClose: (id: string, exitCredit: number) => Promise<void>;
+  onAdvice: (id: string, force: boolean) => Promise<CloseAdvice>;
 }) {
   const open = positions.filter((p) => p.status === "open");
   const closed = positions.filter((p) => p.status === "closed");
@@ -245,7 +413,7 @@ export default function Positions({
       ) : (
         <div className="grid gap-3">
           {[...open, ...closed].map((p) => (
-            <PositionCard key={p.id} p={p} onClose={onClose} />
+            <PositionCard key={p.id} p={p} onClose={onClose} onAdvice={onAdvice} />
           ))}
         </div>
       )}

@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paz Rav — מדריך ראיון: ארכיטקטורה, תבניות עיצוב ו-AI</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#ffffff; --panel2:#f0f2f6; --line:#e2e6ee; --line2:#cfd6e2;
+    --ink:#1b2130; --ink2:#48526a; --ink3:#7a8397;
+    --accent:#b4863b; --accent-bg:#f6ecd6;
+    --code:#2b3446; --code-bg:#eef1f6;
+    --det:#2e7df6;   --det-bg:#e7f0fe;   /* deterministic core */
+    --ai:#7c4dff;    --ai-bg:#efeaff;    /* AI layer */
+    --store:#12a37f; --store-bg:#e2f5ee; /* storage */
+    --ops:#e0791f;   --ops-bg:#fcebdb;   /* deploy / ops */
+    --warn:#c9922a;
+    --shadow:0 2px 8px rgba(20,30,60,.06),0 1px 2px rgba(20,30,60,.04);
+    --radius:14px;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#05070c; --panel:#0e121b; --panel2:#141a26; --line:#232b3a; --line2:#2e3849;
+      --ink:#eaeff7; --ink2:#97a2b8; --ink3:#5c6579;
+      --accent:#d9ae5b; --accent-bg:#241d10;
+      --code:#c9d3e6; --code-bg:#141a26;
+      --det:#5b9ee8; --det-bg:#0f1b2e;
+      --ai:#a98bff; --ai-bg:#191333;
+      --store:#34c795; --store-bg:#0c211b;
+      --ops:#e8a23d; --ops-bg:#2a1c0c;
+      --warn:#e8a23d;
+      --shadow:0 6px 24px rgba(0,0,0,.4),0 1px 2px rgba(0,0,0,.3);
+    }
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);
+    font-family:"Segoe UI","Assistant","Rubik",system-ui,-apple-system,sans-serif;
+    line-height:1.75;font-size:16.5px;
+  }
+  .wrap{max-width:940px;margin:0 auto;padding:32px 22px 96px}
+  header.hero{
+    background:linear-gradient(160deg,var(--accent-bg),var(--panel));
+    border:1px solid var(--line);border-radius:var(--radius);
+    padding:30px 28px;box-shadow:var(--shadow);margin-bottom:14px;
+  }
+  .hero h1{margin:0 0 6px;font-size:30px;letter-spacing:-.02em}
+  .hero .sub{color:var(--ink2);font-size:16px}
+  .hero .pitch{
+    margin-top:16px;padding:14px 16px;background:var(--panel);border:1px solid var(--line);
+    border-right:4px solid var(--accent);border-radius:10px;font-size:15.5px;color:var(--ink)
+  }
+  .tag{display:inline-block;font-size:12.5px;padding:2px 9px;border-radius:999px;
+    background:var(--panel2);border:1px solid var(--line);color:var(--ink2);margin:2px 3px}
+  nav.toc{
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:16px 20px;margin:14px 0 26px;box-shadow:var(--shadow)
+  }
+  nav.toc b{font-size:13px;color:var(--ink3);text-transform:uppercase;letter-spacing:.08em}
+  nav.toc ol{margin:8px 0 0;padding-inline-start:22px;columns:2;column-gap:26px}
+  nav.toc a{color:var(--ink);text-decoration:none;border-bottom:1px dotted var(--line2)}
+  nav.toc a:hover{color:var(--accent)}
+  section{
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:24px 26px;margin:16px 0;box-shadow:var(--shadow);
+    border-right:5px solid var(--accent)
+  }
+  section.det{border-right-color:var(--det)}
+  section.ai{border-right-color:var(--ai)}
+  section.store{border-right-color:var(--store)}
+  section.ops{border-right-color:var(--ops)}
+  h2{font-size:22px;margin:2px 0 4px;letter-spacing:-.01em;display:flex;align-items:center;gap:10px}
+  h2 .n{font-size:13px;font-weight:700;color:#fff;background:var(--accent);
+    width:26px;height:26px;border-radius:8px;display:grid;place-items:center;flex:none}
+  section.det h2 .n{background:var(--det)}
+  section.ai h2 .n{background:var(--ai)}
+  section.store h2 .n{background:var(--store)}
+  section.ops h2 .n{background:var(--ops)}
+  h3{font-size:16.5px;margin:20px 0 4px;color:var(--ink)}
+  .lead{color:var(--ink2);font-size:15px;margin:0 0 8px}
+  p{margin:8px 0}
+  ul,ol{margin:8px 0;padding-inline-start:24px}
+  li{margin:5px 0}
+  strong{color:var(--ink)}
+  em{color:var(--ink2);font-style:normal;font-weight:600}
+  .chip{
+    display:inline-block;direction:ltr;unicode-bidi:isolate;
+    font-family:"JetBrains Mono","Consolas",ui-monospace,monospace;font-size:.86em;
+    background:var(--code-bg);color:var(--code);border:1px solid var(--line);
+    padding:.5px 6px;border-radius:6px;white-space:nowrap
+  }
+  .callout{
+    margin:14px 0;padding:12px 15px;border-radius:10px;border:1px solid var(--line);
+    background:var(--panel2);font-size:14.5px
+  }
+  .callout.why{border-right:4px solid var(--accent);background:var(--accent-bg)}
+  .callout.war{border-right:4px solid var(--warn)}
+  .callout b{display:block;margin-bottom:2px}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14.5px;overflow:hidden;
+    border-radius:10px;border:1px solid var(--line)}
+  th,td{padding:9px 12px;text-align:right;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:var(--panel2);color:var(--ink2);font-weight:700;font-size:13px}
+  tr:last-child td{border-bottom:none}
+  td:first-child{white-space:nowrap;color:var(--ink)}
+  .flow{
+    direction:ltr;unicode-bidi:isolate;font-family:"JetBrains Mono",Consolas,monospace;
+    font-size:13px;line-height:1.65;background:var(--code-bg);color:var(--code);
+    border:1px solid var(--line);border-radius:10px;padding:16px;overflow-x:auto;margin:14px 0
+  }
+  .qa{margin:12px 0;padding:12px 15px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}
+  .qa .q{font-weight:700;color:var(--ink)}
+  .qa .q::before{content:"Q  ";color:var(--accent);font-family:monospace}
+  .qa .a{margin-top:5px;color:var(--ink2);font-size:14.5px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:680px){.grid2,nav.toc ol{grid-template-columns:1fr;columns:1}}
+  .foot{color:var(--ink3);font-size:13px;text-align:center;margin-top:30px}
+  .kbd{font-family:monospace;background:var(--panel2);border:1px solid var(--line2);
+    border-radius:5px;padding:1px 5px;font-size:.85em}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <h1>Paz Rav — מדריך ראיון</h1>
+  <div class="sub">ארכיטקטורת תוכנה · תבניות עיצוב · מבני נתונים · שכבת AI אמיתית</div>
+  <div class="pitch">
+    <strong>המשפט הפותח (30 שניות):</strong> "בניתי מנוע אסטרטגיות אופציות בזמן-אמת. הליבה
+    <em>דטרמיניסטית</em> — כל גריק, IV, הסתברות ורווח/הפסד מחושבים בפייתון טהור וניתנים
+    לבקטסט. מעליה יש שכבת <em>שיפוט AI</em> רזה שאף פעם לא ממציאה מספר, רק שוקלת מספרים שכבר
+    חושבו — כולל דיבייט אמיתי של שלושה מודלי שפה שמייעץ מתי לסגור פוזיציה פתוחה. הכל ארוז
+    כ-<span class="chip">modular monolith</span> שמוכן להתפצל לשירותים בלי כתיבה מחדש."
+  </div>
+  <div style="margin-top:14px">
+    <span class="tag">Python 3.12</span><span class="tag">FastAPI + asyncio</span>
+    <span class="tag">React + TypeScript</span><span class="tag">Redis</span>
+    <span class="tag">Postgres</span><span class="tag">LangGraph</span>
+    <span class="tag">Langfuse</span><span class="tag">Anthropic Claude</span>
+    <span class="tag">Docker Compose</span><span class="tag">Firebase Auth</span>
+  </div>
+</header>
+
+<nav class="toc">
+  <b>תוכן</b>
+  <ol>
+    <li><a href="#pitch">מה זה, בשורה אחת</a></li>
+    <li><a href="#redline">הקו האדום: דטרמיניסטי מול AI</a></li>
+    <li><a href="#pipeline">הצינור — נתיב קוד אחד</a></li>
+    <li><a href="#monolith">למה monolith מודולרי</a></li>
+    <li><a href="#agents">שכבת ה-AI — בכנות</a></li>
+    <li><a href="#debate">הדיבייט: 3 מודלים על סגירה</a></li>
+    <li><a href="#tools">למה LangGraph ו-Langfuse</a></li>
+    <li><a href="#concurrency">מודל הקונקרנטיות</a></li>
+    <li><a href="#storage">Redis מול Postgres</a></li>
+    <li><a href="#patterns">תבניות עיצוב</a></li>
+    <li><a href="#data">מבני נתונים וחוזים</a></li>
+    <li><a href="#deploy">פריסה ואבטחה</a></li>
+    <li><a href="#war">סיפורי דיבאג</a></li>
+    <li><a href="#qa">שאלות ראיון צפויות</a></li>
+    <li><a href="#next">מה הלאה</a></li>
+  </ol>
+</nav>
+
+<!-- 1 -->
+<section id="pitch">
+  <h2><span class="n">1</span> מה זה, בשורה אחת</h2>
+  <p class="lead">מנוע שמוצא את האסטרטגיה הנכונה, בזמן הנכון, למשך הזמן הנכון — ומוכיח את
+  הקצה בבקטסט לפני שמסתכנים בדולר.</p>
+  <p>המערכת סורקת רצף קבוע של נכסי בסיס (מדדים ומניות אמריקאיות), מדרגת שתי אסטרטגיות של
+  מכירת פרמיה בסיכון מוגדר — <em>Iron Condor</em> ו-<em>DACS</em> (קלנדר דיאגונלי אדפטיבי) —
+  ומגישה דשבורד חי לפתיחה/סגירה של פוזיציות נייר. שלוש ההחלטות שהסוחר מקבל שוב ושוב, בלי
+  רגש: <strong>איזה מבנה, מתי להיכנס, וכמה זמן להחזיק</strong>. כל אחת נשענת על כלל מעל מספר
+  מחושב — ולכן ניתנת לבקטסט.</p>
+</section>
+
+<!-- 2 -->
+<section id="redline" class="det">
+  <h2><span class="n">2</span> הקו האדום: דטרמיניסטי מול AI</h2>
+  <p class="lead">זו התובנה שמבדילה את הפרויקט מ-90% מ"פרויקטי ה-AI" — וכדאי לפתוח בה.</p>
+  <p><strong>כל מספר מחושב בפייתון טהור. מודל שפה לעולם לא מחשב מספר — הוא רק שוקל מספרים
+  שכבר חושבו.</strong> מודל שנשאל "מה הדלתא?" יהזה. לכן הליבה הכמותית
+  (<span class="chip">quant/</span>, <span class="chip">analytics/</span>,
+  <span class="chip">strategies/</span>, <span class="chip">backtest/</span>) לא מכילה אף
+  קריאת LLM, ושכבת ה-AI (<span class="chip">agents/</span>) מקבלת רק דאטה מובנית ומחושבת.</p>
+  <div class="callout why">
+    <b>למה זה חשוב בראיון</b>
+    זה מה שהופך את המערכת גם ל<em>אמינה</em> (אפשר לבדוק כל מספר מול snapshot של ספק) וגם
+    ל<em>ניתנת-לבקטסט</em> (אותו קוד רץ בהיסטוריה). זו הבחנה אדריכלית, לא רק החלטת מימוש.
+  </div>
+</section>
+
+<!-- 3 -->
+<section id="pipeline" class="det">
+  <h2><span class="n">3</span> הצינור — נתיב קוד אחד</h2>
+  <p class="lead"><span class="chip">Pipeline.run_once()</span> היא הפונקציה היחידה
+  שעושה הכל — וזה מה שמבטיח <em>זהות בין בקטסט ל-live</em>.</p>
+  <p>המתזמן (<span class="chip">Scheduler</span>, טיימר — לא שירות) מריץ אותה בלולאה על
+  דאטה חי; הבקטסטר מריץ את <em>אותה</em> פונקציה על היסטוריה. אין שני מסלולים שיכולים
+  להתפצל — מה שראית בבקטסט הוא בדיוק מה שירוץ בזמן-אמת.</p>
+  <div class="flow">market data
+   │
+   ▼
+[ CODE ]  ingest → features (greeks · IV rank · term slope · regime · RSI)
+   │
+   ▼
+[ CODE ]  enumerate & score  (Iron Condor · DACS)  → ranked shortlist
+   │
+   ▼
+[ AI ]    Analyst (verdict) ⇄ Critic (bear case)   → LangGraph loop
+   │
+   ▼
+[ CODE ]  Exit-Manager sweep → flags open positions   (advisory, never auto-closes)
+   │
+   ▼
+Langfuse traces every decision → on close, realized P&L scores back onto the trace</div>
+  <p>המתזמן והבקטסטר <em>נראים</em> כמו שירותים בדיאגרמה, אבל אחד הוא טיימר-בתהליך והשני
+  הוא מצב-ריצה — אף אחד אינו שרת always-on. זו דוגמה טובה להסביר בראיון את ההבדל בין
+  <em>גבול לוגי</em> ל<em>גבול פריסה</em>.</p>
+</section>
+
+<!-- 4 -->
+<section id="monolith">
+  <h2><span class="n">4</span> למה monolith מודולרי (ולא מיקרו-שירותים)</h2>
+  <p class="lead">בחירה מודעת — לא עצלנות. הרצת 7 קונטיינרים לפרויקט סולו היא עלות תפעול
+  בלי תועלת.</p>
+  <ul>
+    <li><strong>המודולים נוקשים</strong> (<span class="chip">adapters · analytics ·
+      strategies · builder · agents · positions · store · api</span>) — גבולות נקיים,
+      כך שהוצאה עתידית לשירות היא זולה.</li>
+    <li><strong>הפריסה לא מפוצלת</strong> — המודולים קוראים זה לזה בתוך התהליך; אותם גבולות
+      הופכים לקריאות רשת רק אם מודול באמת יוחלץ.</li>
+    <li><strong>מוציאים רק על טריגר אמיתי:</strong> את מנוע הזמן-אמת — כשאסור שיפספס טיק
+      בגלל ריסטארט של UI; את ה-API — כשרוצים לפרוס דשבורד בלי לגעת במנוע; את הקומיטי — כשקריאות
+      ה-LLM איטיות/יקרות וצריך לסקיילן בנפרד. לכל היותר שלושה deployables.</li>
+  </ul>
+  <div class="callout why"><b>המשפט לראיון</b>
+    "בניתי לגבולות של מיקרו-שירותים, אבל פרסתי כמונוליט. זה נותן את היתרונות של שניהם: פשטות
+    תפעול היום, ומסלול הגירה זול כשהכאב יהיה אמיתי."</div>
+</section>
+
+<!-- 5 -->
+<section id="agents" class="ai">
+  <h2><span class="n">5</span> שכבת ה-AI — בכנות (זה מרשים דווקא כי זה מדויק)</h2>
+  <p class="lead">אל תמכור "צבא סוכנים". תסביר בדיוק מה כן ומה לא — זה משדר בגרות הנדסית.</p>
+  <table>
+    <tr><th>רכיב</th><th>האם זה LLM?</th><th>למה כך</th></tr>
+    <tr><td>Analyst</td><td>לא — כללי</td><td>ורדיקט take/caution/pass מעל מספרים; שקוף
+      וניתן לבקטסט, זול לבדיקה.</td></tr>
+    <tr><td>Critic</td><td>לא — כללי</td><td>ה"דוב" האדוורסרי; הפרדת הצעה מביקורת מפחיתה
+      overconfidence — <em>מדיד</em>.</td></tr>
+    <tr><td>Explainer</td><td>כן — Claude Haiku</td><td>המקום היחיד (עד עכשיו) שקורא מודל,
+      ורק כדי <em>לנסח</em> הסבר — לא מחליט דבר.</td></tr>
+    <tr><td><strong>Close-Advisor</strong></td><td><strong>כן — 3× Claude</strong></td>
+      <td>הפיצ'ר החדש: דיבייט אמיתי שמייעץ מתי לסגור. הראשון שבו מודל <em>שוקל לקראת
+      החלטה</em>, לא רק מנסח. פירוט בסעיף הבא.</td></tr>
+  </table>
+  <div class="callout why"><b>למה זו לא הונאה</b>
+    ה"סוכנים" הדטרמיניסטיים הם <em>מדיניות</em> קוד עם תפקידים מופרדים — וזו תבנית תקפה.
+    הכנות לגבי מה שהם באמת (כללים, לא LLM) היא בדיוק מה שמראיין סניור רוצה לשמוע: אתה יודע
+    להבחין בין "AI" ל"קוד עם פרסונה".</div>
+</section>
+
+<!-- 6 -->
+<section id="debate" class="ai">
+  <h2><span class="n">6</span> הדיבייט: שלושה מודלים על שאלת הסגירה</h2>
+  <p class="lead">"מתי כדאי לי לסגור?" — כפתור על כל פוזיציה פתוחה שמפעיל שלוש קריאות Claude
+  אמיתיות. זו התבנית הקלאסית <span class="chip">generator → critic → arbiter</span>.</p>
+  <ol>
+    <li><strong>Analyst</strong> — קורא את תמונת-המצב וטוען אם לסגור או להחזיק, על סמך המספרים.</li>
+    <li><strong>Critic (איפכא מסתברא)</strong> — מקבל את עמדת המנתח וטוען את ההפך, חזק ככל
+      שהמספרים מאפשרים, כדי לחשוף את מה שהמנתח פספס.</li>
+    <li><strong>Decider</strong> — שוקלל את שניהם ומכריע <span class="chip">hold | close |
+      reduce</span> עם רמת ביטחון ונימוק.</li>
+  </ol>
+  <p>הדיבייט רץ כ<strong>גרף LangGraph אמיתי</strong> עם <em>קשת מותנית</em>:
+  <span class="chip">analyst → critic → decider → (אם ביטחון המכריע &lt; 0.5 וטרם תוקן:
+  חזרה למנתח עם התנגדות המבקר, פעם אחת) → done</span>. כאן LangGraph <em>באמת נושא במשקל</em>
+  — הוא מתזמר קריאות <strong>מודל-שפה</strong> (לא צמתים של כללים) דרך גרף מסתעף; סוכן יחיד
+  לא היה צריך גרף בכלל.</p>
+  <h3>מה שומר על הכנות של זה</h3>
+  <ul>
+    <li><strong>חבילת נתונים דטרמיניסטית</strong> (<span class="chip">Situation</span>):
+      רווח לא-ממומש מ-<span class="chip">mark_to_market()</span>, DTE, מרחק מהסטופ, IV rank,
+      משטר, תנועת מחיר אחרונה — הכל מחושב בפייתון. המודלים <em>רק שוקלים</em>.</li>
+    <li><strong>Structured outputs</strong> (forced tool-use): כל מודל <em>חייב</em> להחזיר
+      JSON סכמתי (<span class="chip">stance + confidence + reasons[]</span>) — פיזית לא יכול
+      להחזיר טקסט חופשי, וכל נימוק אמור לצטט מספר. זו ההגנה מהזיה.</li>
+    <li><strong>ייעוץ בלבד</strong> — כמו ה-Exit Manager, לעולם לא סוגר לבד. הביצוע אצל
+      הברוקר של המשתמש.</li>
+    <li><strong>Langfuse</strong> — הדיבייט נרשם על אותו <span class="chip">trace_id</span>
+      של פתיחת הפוזיציה, כך שכשהיא נסגרת ב-P&amp;L אמיתי — הכל מקושר.</li>
+  </ul>
+  <div class="callout why"><b>שיקול ארכיטקטוני שמראיין אוהב</b>
+    להריץ דיבייט של 3 מודלים בכל <span class="kbd">refresh</span> על כל פוזיציה = פיצוץ עלות
+    ו-latency. הפתרון: <span class="chip">cache-aside</span> לפי <em>חתימת-מצב</em> גסה
+    (בנדים של DTE / רווח / מרחק-סטופ). רענון רגיל מגיש מהמטמון מיידית; רק שינוי מהותי מפעיל
+    דיבייט חדש. כפתור "בדוק עכשיו" עוקף את המטמון. כך "כל רענון מראה הערכה" בלי לשלם על LLM
+    בכל לחיצה.</div>
+  <h3>השוואת תעשייה (למה בחרתי כך, 2026)</h3>
+  <table>
+    <tr><th>מסגרת</th><th>מתי</th><th>ההחלטה שלי</th></tr>
+    <tr><td>LangGraph</td><td>שליטה מפורשת על flow; גרף עם state/checkpoints; audit trail</td>
+      <td><strong>נבחר</strong> — מתאים בול לדיבייט מותנה.</td></tr>
+    <tr><td>CrewAI</td><td>פרוטוטייפ מהיר לפי roles/goals; עקומת למידה נמוכה</td>
+      <td>פחות שליטה; מיותר לגרף מוגדר.</td></tr>
+    <tr><td>AutoGen</td><td>דיבייט שיחתי (GroupChat)</td>
+      <td>נפסל — כל תור = קריאה עם כל ההיסטוריה, יקר.</td></tr>
+  </table>
+</section>
+
+<!-- 7 -->
+<section id="tools" class="ai">
+  <h2><span class="n">7</span> למה LangGraph ולמה Langfuse</h2>
+  <h3>LangGraph — לולאות מותנות בין סוכנים</h3>
+  <p>מנהל שני גרפים: (1) לולאת <span class="chip">analyst ↔ critic</span> של <em>פתיחת</em>
+  פוזיציה — צמתים מבוססי-כללים; ו-(2) דיבייט <em>סגירת</em> הפוזיציה
+  <span class="chip">analyst → critic → decider</span> עם קשת מותנית — וכאן הצמתים הם
+  <strong>קריאות מודל-שפה אמיתיות</strong>. הגרף השני הוא השימוש ש<em>נושא במשקל</em>: state
+  משותף, edge מותנה (חזרה למנתח אם ביטחון המכריע נמוך), ותנאי-עצירה. עם סוכן יחיד LangGraph
+  מיותר — הוא מצדיק את עצמו <em>בגלל</em> הלולאה. שום דבר אחר מ-LangChain לא בשימוש; Claude
+  נקרא ישירות דרך ה-SDK.</p>
+  <h3>Langfuse — הכלי הכי מוצדק בסטאק</h3>
+  <p>מתעד כל החלטה, וקריטית — מאפשר <em>לתת ציון לתוצאה בחזרה</em> כשעסקה נסגרת. זה סוגר
+  לולאה: אפשר לשאול <em>אילו משטרים ופרומפטים באמת מייצרים קריאות מנצחות</em>. זה ההבדל בין
+  בוט שבוחר עסקאות למערכת ש<em>לומדת</em> אילו מהשיפוטים שלה היו טובים.</p>
+  <table>
+    <tr><th>Observability</th><th>ייחוד</th></tr>
+    <tr><td>Langfuse</td><td><strong>נבחר</strong> — open-source, self-hostable, framework-agnostic (OTel).</td></tr>
+    <tr><td>LangSmith</td><td>המסחרי של LangChain; אינטגרציה עמוקה עם LangGraph.</td></tr>
+    <tr><td>Arize Phoenix</td><td>מגיע מ-ML monitoring; 50+ מטריקות eval — שדרוג טבעי.</td></tr>
+  </table>
+</section>
+
+<!-- 8 -->
+<section id="concurrency">
+  <h2><span class="n">8</span> מודל הקונקרנטיות</h2>
+  <p class="lead">מנוע זמן-אמת אסור שייחסם. שלושה סוגי עבודה, שלושה סוגי worker.</p>
+  <table>
+    <tr><th>עבודה</th><th>Worker</th><th>למה</th></tr>
+    <tr><td>I/O — feed, API, push לדשבורד</td><td>לולאת <span class="chip">asyncio</span> יחידה</td>
+      <td>לעולם לא נחסם על רשת.</td></tr>
+    <tr><td>CPU — greeks, IV fit, Monte-Carlo</td><td><span class="chip">process pool</span></td>
+      <td>עוקף את ה-GIL למקביליות אמיתית.</td></tr>
+    <tr><td>LLM — Analyst, Critic, Decider</td><td>async + <span class="chip">Semaphore(k)</span></td>
+      <td>קריאות רשת; ה-cap חוסם עלות ו-rate limits.</td></tr>
+  </table>
+</section>
+
+<!-- 9 -->
+<section id="storage" class="store">
+  <h2><span class="n">9</span> Redis מול Postgres</h2>
+  <blockquote style="margin:0 0 10px;padding:10px 14px;border-right:4px solid var(--store);
+    background:var(--store-bg);border-radius:8px">
+    <strong>בשורה אחת:</strong> Redis הוא <em>"מה נכון עכשיו"</em>; Postgres הוא <em>"מה
+    קרה"</em>. Redis הוא השולחן, Postgres הוא ארון התיוק.</blockquote>
+  <ul>
+    <li><strong>Redis</strong> — state חם + pub/sub: הפיצ'רים האחרונים, היסטוריית IV, ותעלת
+      ה-push החי לדשבורד.</li>
+    <li><strong>Postgres</strong> — אמת מתמשכת: מועמדים ופוזיציות. שרד ריסטארט של קונטיינר
+      (מאומת).</li>
+  </ul>
+  <h3>Upsert מול Insert — הבנת מחזור-חיים של ישות</h3>
+  <p><strong>פוזיציה = upsert</strong> על ה-<span class="chip">UUID</span> שלה (ישות אחת
+  שעוברת מוטציה לאורך חייה: alert נדלק/נכבה, ואז נסגרת). <strong>מועמד = insert</strong>
+  פשוט (טרי בכל סריקה, לא ממותג). הבחירה בין השניים היא בדיוק סוג הפרט שמראה שאתה חושב על
+  lifecycle, לא רק על "לשמור לדאטהבייס".</p>
+  <h3>אחסון מוחלף מאחורי Protocol</h3>
+  <p><span class="chip">Protocol</span>-ים (<span class="chip">FeatureStore ·
+  CandidateRepository · PositionRepository</span>) עם מימוש in-memory (ברירת מחדל + טסטים)
+  ומימוש Redis/Postgres אמיתי. <em>אותם טסטים</em> רצים על שניהם — זה כוחה של תבנית
+  Repository.</p>
+</section>
+
+<!-- 10 -->
+<section id="patterns">
+  <h2><span class="n">10</span> תבניות עיצוב — כולן ממומשות בקוד</h2>
+  <p class="lead">לא רק לדקלם שמות — לכל אחת יש מיקום אמיתי ומשפט הסבר.</p>
+  <table>
+    <tr><th>תבנית</th><th>איפה</th><th>המשפט</th></tr>
+    <tr><td>Strategy</td><td><span class="chip">strategies/base.py</span></td>
+      <td>מבנים שונים לגמרי (קונדור/DACS) מדורגים על ציון אחד מאחורי ממשק אחיד.</td></tr>
+    <tr><td>Factory / Registry</td><td><span class="chip">strategies/registry.py</span></td>
+      <td><span class="chip">@register</span> + <span class="chip">make_strategy(name)</span> — הרחבה בלי לגעת בקורא.</td></tr>
+    <tr><td>Adapter (Port)</td><td><span class="chip">adapters/</span></td>
+      <td>החלפת ספק דאטה (yfinance↔IBKR) = שורה, לא rewrite.</td></tr>
+    <tr><td>Repository</td><td><span class="chip">store/ · positions/</span></td>
+      <td>אחסון מאחורי Protocol; memory לטסטים, Postgres לפרודקשן.</td></tr>
+    <tr><td>Observer</td><td><span class="chip">bus/</span></td>
+      <td>pub/sub → WebSocket fan-out; push חי בלי polling.</td></tr>
+    <tr><td>Proposer–Critic–Arbiter</td><td><span class="chip">agents/</span></td>
+      <td>הפרדת הצעה/ביקורת/הכרעה — בליבת שכבת ה-AI.</td></tr>
+    <tr><td>State machine</td><td><span class="chip">agents/graph.py</span> (LangGraph)</td>
+      <td>הדיבייט כגרף מצבים עם edge מותנה.</td></tr>
+  </table>
+</section>
+
+<!-- 11 -->
+<section id="data" class="store">
+  <h2><span class="n">11</span> מבני נתונים וחוזים</h2>
+  <ul>
+    <li><strong>חוזים משותפים חוצי-מודול</strong> — Pydantic (<span class="chip">OptionQuote ·
+      Feature · Candidate · Leg</span>) הם "אוצר המילים" שכל מודול מסכים עליו. משם מודולים
+      מדברים בלי לחטט זה במעיים של זה.</li>
+    <li><strong>עיצוב סכמה עם תובנה</strong> — <span class="chip">Leg</span> נושא
+      <span class="chip">expiry</span>/<span class="chip">iv</span> אופציונליים, כדי לתמוך גם
+      בקונדור חד-תפוגתי וגם ב-DACS רב-תפוגתי במבנה אחד. מכאן נובע שאסור להשתמש ב-
+      <span class="chip">dataclasses.asdict</span> תמים על ישות עם אובייקטי
+      <span class="chip">date</span> — יש שכבת (de)serialize ייעודית.</li>
+    <li><strong>Immutability</strong> — <span class="chip">Position</span> ו-<span class="chip">
+      Candidate</span> הם <span class="chip">frozen dataclass</span>; שינוי-מצב עובר דרך
+      <span class="chip">replace()</span>, כך שאין מוטציה מפתיעה במקום.</li>
+  </ul>
+</section>
+
+<!-- 12 -->
+<section id="deploy" class="ops">
+  <h2><span class="n">12</span> פריסה ואבטחה</h2>
+  <ul>
+    <li><strong>Docker Compose</strong> — <span class="chip">up -d --build</span> אחד מרים
+      Postgres + Redis + האפליקציה, עם <span class="chip">HEALTHCHECK</span>. אותו image
+      שנפרס לענן.</li>
+    <li><strong>גישה ציבורית מכל העולם</strong> — <span class="chip">Cloudflare Tunnel</span>
+      (חינם, בלי דומיין) כשירות <span class="chip">systemd</span> על Raspberry Pi.</li>
+    <li><strong>Google Sign-In + אישור בעלים</strong> — Firebase Auth בצד לקוח; אימות
+      ה-<span class="chip">ID token</span> בצד שרת מול ה-JWKS של Google עם
+      <span class="chip">PyJWT</span> (לא ה-SDK המלא), <span class="chip">leeway=60</span>
+      להיסחפות שעון. כל חשבון Google יכול לבקש גישה; הבעלים מקבל מייל עם קישור-אישור בלחיצה;
+      רק מיילים מאושרים נכנסים.</li>
+    <li><strong>Middleware אחד</strong> ששומר על כל <span class="chip">/api/*</span> — route
+      עתידי מוגן כברירת מחדל, לא בזכות זכירה.</li>
+  </ul>
+  <p class="lead">מסלול ענן (AWS): App Runner → ECS Fargate → EKS, עם RDS/ElastiCache/S3
+  ו-Claude דרך Bedrock — הוספת השלב הבא רק כשהקודם באמת כואב.</p>
+</section>
+
+<!-- 13 -->
+<section id="war" class="ops">
+  <h2><span class="n">13</span> סיפורי דיבאג (זהב לראיון)</h2>
+  <div class="callout war"><b>באג ה-<span class="chip">asyncpg</span> event-loop</b>
+    ה-pool של asyncpg נקשר ללולאת ה-event שיצרה אותו. בניית ה-pool ב-<span class="chip">
+    asyncio.run()</span> חד-פעמי לפני ש-uvicorn מפעיל את הלולאה שלו גרמה לכל query מאוחר
+    <em>להיתקע בשקט</em> (ה-pool שייך ללולאה שכבר נסגרה). הפתרון: לבנות את כל ה-stores בתוך
+    ה-<span class="chip">lifespan</span> coroutine של FastAPI ולהחליף ב-<span class="chip">
+    nonlocal</span>. סיפור מצוין ל"ספר על באג קשה שפתרת".</div>
+  <div class="callout war"><b>Firebase clock skew</b>
+    התחברות נכשלה עם "token is not yet valid (iat)" בגלל הפרש שעון של שנייה בין השרתים —
+    נפתר עם <span class="chip">leeway=60</span> באימות ה-JWT.</div>
+</section>
+
+<!-- 14 -->
+<section id="qa">
+  <h2><span class="n">14</span> שאלות ראיון צפויות + תשובות</h2>
+
+  <div class="qa"><div class="q">איך אתה מונע שה-LLM "יהזה" מספרים פיננסיים?</div>
+    <div class="a">אני לא נותן לו לחשב מספרים בכלל. כל מספר מחושב בפייתון ומועבר כדאטה מובנית;
+    ה-LLM מקבל אותו כקלט ומחזיר <span class="chip">structured output</span> (forced tool-use)
+    שכל נימוק בו מצטט מספר קיים. פיזית אין לו איפה להמציא.</div></div>
+
+  <div class="qa"><div class="q">למה לא מיקרו-שירותים מלאים?</div>
+    <div class="a">בניתי לגבולות מודול נוקשים אבל פורס כמונוליט. 7 קונטיינרים לפרויקט סולו =
+    עלות תפעול בלי תועלת. ההוצאה לשירות מותנית בטריגר אמיתי (טיק שאסור לפספס, סקיילינג נפרד
+    של LLM). זול להגר, יקר להריץ מוקדם מדי.</div></div>
+
+  <div class="qa"><div class="q">איך אתה מבטיח שבקטסט משקף את ה-live?</div>
+    <div class="a">שניהם קוראים לאותה <span class="chip">Pipeline.run_once()</span>. אין שני
+    מסלולי קוד שיכולים להתפצל — זו זהות מובנית, לא בדיקה שאני מקווה שתעבור.</div></div>
+
+  <div class="qa"><div class="q">מתי Redis ומתי Postgres?</div>
+    <div class="a">Redis ל-state חם ו-pub/sub ("מה נכון עכשיו"); Postgres לאמת מתמשכת ("מה
+    קרה"). פוזיציה נשמרת ב-upsert על UUID כי היא עוברת מוטציה; מועמד ב-insert כי הוא טרי בכל
+    סריקה.</div></div>
+
+  <div class="qa"><div class="q">איפה ה-AI באמת מוסיף ערך, ולא רק "מדביק GPT"?</div>
+    <div class="a">בשקלול סיגנלים סותרים והקשריים שכלל קבוע לא לוכד — למשל "48% מהרווח, אבל 9
+    ימים לפקיעה ומחיר נסחף לעבר השורט". שם דיבייט Analyst/Critic/Decider מייצר החלטה
+    <em>ונימוק ניתן-לביקורת</em>. הכללים הדטרמיניסטיים עדיין רצים במקביל וניזונים לתוך הדיבייט
+    כקלט.</div></div>
+
+  <div class="qa"><div class="q">איך המערכת משתפרת עם הזמן?</div>
+    <div class="a">כל החלטה נרשמת ב-Langfuse; כשפוזיציה נסגרת ב-P&amp;L אמיתי, הציון חוזר על
+    אותו trace. זה סוגר לולאת משוב. השלב הבא: <span class="chip">case-memory</span> מעל
+    pgvector — ה-Decider ישלוף פוזיציות דומות שנסגרו כדי להישען על ההיסטוריה עצמה.</div></div>
+</section>
+
+<!-- 15 -->
+<section id="next" class="ai">
+  <h2><span class="n">15</span> מה הלאה — חשיבה קדימה</h2>
+  <ul>
+    <li><strong>Case-memory (RAG מעל <span class="chip">pgvector</span>)</strong> — ה-Decider
+      שולף 3–5 פוזיציות דומות שכבר נסגרו ("IC על QQQ, IV rank גבוה, נגיעה בצד") ורואה איך
+      הסתיימו. זה הופך "בניתי דיבייט" ל"בניתי מערכת שלומדת מהעסקאות של עצמה". דורש מסה של
+      פוזיציות סגורות כדי להיות אמיתי.</li>
+    <li><strong>סוכן רפלקציה אסטרטגי</strong> — מנתח סטטיסטיקות מצטברות מ-Langfuse/DB וממליץ
+      על כוונון פרמטרים. ייעוץ, עם זיכרון, בכפוף לגודל מדגם מינימלי.</li>
+    <li><strong>Arize Phoenix</strong> — evaluation שיטתי של איכות הדיבייט (faithfulness,
+      grounding), לא רק tracing.</li>
+  </ul>
+  <p class="foot">Paz Rav · מדריך ראיון · כל מספר דטרמיניסטי, כל שיפוט ניתן-לביקורת · הדפס
+  עם <span class="kbd">Ctrl/⌘ + P</span></p>
+</section>
+
+</div>
+</body>
+</html>

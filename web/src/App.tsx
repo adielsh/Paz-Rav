@@ -10,7 +10,7 @@ import { SignedInBar } from "./AuthGate";
 import { authedFetch } from "./api";
 import { currentIdToken } from "./auth";
 import { strategyColor, strategyLabel } from "./lib";
-import type { Candidate, PayoffPoint, Position, Review } from "./types";
+import type { Candidate, CloseAdvice, PayoffPoint, Position, Review } from "./types";
 
 interface Group {
   strategy: string;
@@ -78,6 +78,14 @@ export default function App({ user }: { user: User | null }) {
     const r = await authedFetch(`/api/positions/open/${c.underlying}/${idx}`, { method: "POST" });
     if (!r.ok) throw new Error("open failed");
     await refreshPositions();
+  };
+
+  const advisePosition = async (id: string, force: boolean): Promise<CloseAdvice> => {
+    const r = await authedFetch(`/api/positions/${id}/close-advice`, {
+      method: force ? "POST" : "GET",
+    });
+    if (!r.ok) throw new Error("advice failed");
+    return r.json();
   };
 
   const closePosition = async (id: string, exitCredit: number) => {
@@ -211,7 +219,7 @@ export default function App({ user }: { user: User | null }) {
       </div>
 
       <section className="mt-6">
-        <Positions positions={positions} onClose={closePosition} />
+        <Positions positions={positions} onClose={closePosition} onAdvice={advisePosition} />
       </section>
 
       <section className="mt-6">
