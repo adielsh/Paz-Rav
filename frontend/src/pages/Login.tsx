@@ -98,26 +98,25 @@ export default function Login() {
         </button>
 
         <form className="auth-form" onSubmit={submit}>
-          {firstRun ? (
-            <div className="auth-first">
-              <h2>{t("auth_setup_title")}</h2>
-              <p>{t("auth_setup_lead")}</p>
-            </div>
-          ) : (
-            <div className="auth-tabs" role="tablist">
-              <button type="button" role="tab" aria-selected={mode === "login"}
-                className={mode === "login" ? "on" : ""}
-                onClick={() => { setMode("login"); setErr(null); }}>
-                {t("auth_signin")}
+          {/* Sign in is always reachable. Hiding it on a fresh install produced a dead
+              end: anyone who already had an account saw only "Create account". */}
+          <div className="auth-tabs" role="tablist">
+            <button type="button" role="tab" aria-selected={mode === "login"}
+              className={mode === "login" ? "on" : ""}
+              onClick={() => { setMode("login"); setErr(null); }}>
+              {t("auth_signin")}
+            </button>
+            {signupOpen && (
+              <button type="button" role="tab" aria-selected={mode === "register"}
+                className={mode === "register" ? "on" : ""}
+                onClick={() => { setMode("register"); setErr(null); }}>
+                {t("auth_create")}
               </button>
-              {signupOpen && (
-                <button type="button" role="tab" aria-selected={mode === "register"}
-                  className={mode === "register" ? "on" : ""}
-                  onClick={() => { setMode("register"); setErr(null); }}>
-                  {t("auth_create")}
-                </button>
-              )}
-            </div>
+            )}
+          </div>
+
+          {firstRun && mode === "register" && (
+            <p className="auth-first-note">{t("auth_setup_lead")}</p>
           )}
 
           {mode === "register" && (

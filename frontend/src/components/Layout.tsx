@@ -6,6 +6,7 @@ import { toggleLang, setMode, toggleTheme, type Mode } from "../store/uiSlice";
 import { useT } from "../i18n/useT";
 import type { TKey } from "../i18n/translations";
 import KillSwitch from "./KillSwitch";
+import UserMenu from "./UserMenu";
 
 type NavItem = { to: string; key: TKey; ic: string; end?: boolean };
 // One menu for both modes: the sidebar is navigation, not a mode-dependent surface. Hiding
@@ -116,6 +117,7 @@ export default function Layout() {
               {theme === "dark" ? <SunIcon /> : <MoonIcon />}</button>
             <button className="langbtn" onClick={() => dispatch(toggleLang())}>{t("lang_button")}</button>
             <KillSwitch />
+            <UserMenu />
           </div>
         </header>
         <div className="content"><Outlet /></div>

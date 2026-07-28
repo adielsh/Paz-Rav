@@ -116,6 +116,16 @@ class BrokerCreds(BaseModel):
     ib_password: str | None = None
 
 
+class ProfileUpdate(BaseModel):
+    display_name: str | None = Field(default=None, max_length=120)
+    email: EmailStr | None = None
+
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=10, max_length=200)
+
+
 class Me(BaseModel):
     id: int
     email: str
@@ -259,6 +269,49 @@ def build_router(engine, user_id_dep):
     @r.get("/me")
     def me(uid: int = Depends(user_id_dep)) -> Me:
         return _me(uid)
+
+    @r.patch("/profile")
+    def update_profile(body: ProfileUpdate, uid: int = Depends(user_id_dep)) -> Me:
+        sets, params = [], {"i": uid}
+        if body.display_name is not None:
+            sets.append("display_name = :d")
+            params["d"] = body.display_name.strip() or None
+        if body.email is not None:
+            new = str(body.email).lower()
+            clash = _row("SELECT id FROM users WHERE lower(email) = :e AND id <> :i",
+                         e=new, i=uid)
+            if clash:
+                raise HTTPException(409, "that email is already registered")
+            sets.append("email = :e")
+            params["e"] = new
+        if not sets:
+            raise HTTPException(422, "nothing to update")
+        with engine.begin() as c:
+            c.execute(text(f"UPDATE users SET {', '.join(sets)} WHERE id = :i"), params)
+        log.info("profile updated", extra={"user_id": uid, "fields": len(sets)})
+        return _me(uid)
+
+    @r.post("/password")
+    def change_password(body: PasswordChange, resp: Response,
+                        uid: int = Depends(user_id_dep)) -> dict:
+        """Requires the current password: a stolen session must not be enough to take
+        over the account permanently."""
+        u = _row("SELECT id, email, password_hash FROM users WHERE id = :i", i=uid)
+        if not u:
+            raise HTTPException(401, "account unavailable")
+        try:
+            _ph.verify(u["password_hash"], body.current_password)
+        except (VerifyMismatchError, VerificationError, InvalidHashError):
+            raise HTTPException(403, "current password is incorrect")
+        if not re.search(r"[A-Za-z]", body.new_password) or not re.search(r"\d", body.new_password):
+            raise HTTPException(422, "password needs at least one letter and one number")
+        with engine.begin() as c:
+            c.execute(text("UPDATE users SET password_hash = :p WHERE id = :i"),
+                      {"p": _ph.hash(body.new_password), "i": uid})
+        # Re-issue so the current tab stays signed in with a token minted after the change.
+        _issue(resp, uid, u["email"])
+        log.info("password changed", extra={"user_id": uid})
+        return {"ok": True}
 
     @r.get("/credentials")
     def get_credentials(uid: int = Depends(user_id_dep)) -> dict:

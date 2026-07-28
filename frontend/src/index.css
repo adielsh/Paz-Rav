@@ -1042,6 +1042,12 @@ html[lang="he"] .auth-zone span::before { content: "אזור רווח"; letter-s
   background: var(--accent); border-radius: 2px 2px 0 0;
 }
 
+.auth-first-note {
+  margin: -.35rem 0 0; padding: .6rem .75rem;
+  background: var(--accent-soft); border: 1px solid var(--accent-line);
+  border-radius: var(--radius-sm); color: var(--fg-dim);
+  font-size: 12px; line-height: 1.55;
+}
 .auth-first h2 { margin: 0 0 .35rem; font-size: 1.35rem; font-weight: 720; letter-spacing: -.025em; }
 .auth-first p { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.6; }
 
@@ -1115,3 +1121,61 @@ html[lang="he"] .auth-zone span::before { content: "אזור רווח"; letter-s
 .setform hr { border: 0; border-top: 1px solid var(--line); margin: .4rem 0; width: 100%; }
 .setlead { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.65; }
 .setwarn { color: var(--amber); font-weight: 600; }
+
+/* --------------------------------------------------------- user menu ---- */
+.usermenu { position: relative; }
+.uavatar {
+  display: flex; align-items: center; gap: .5rem;
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--fg);
+  border-radius: var(--pill); padding: .28rem .6rem .28rem .3rem;
+}
+[dir="rtl"] .uavatar { padding: .28rem .3rem .28rem .6rem; }
+.uavatar:hover { background: var(--panel-3); border-color: var(--line-strong); }
+.uavatar.on { border-color: var(--accent); box-shadow: var(--ring); }
+.uavatar .ini {
+  width: 26px; height: 26px; flex: none; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--accent); color: var(--accent-fg);
+  font-size: 10.5px; font-weight: 800; letter-spacing: .02em;
+}
+.uavatar .who { display: flex; flex-direction: column; line-height: 1.15; text-align: start; }
+.uavatar .who b { font-size: 12px; font-weight: 650; }
+.uavatar .who i {
+  font-style: normal; font-size: 9px; font-weight: 700; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--muted);
+}
+.uavatar .caret { color: var(--muted); font-size: 9px; }
+
+.upop {
+  position: absolute; z-index: 95; top: calc(100% + .45rem); inset-inline-end: 0;
+  min-width: 244px; background: var(--bg-elev);
+  border: 1px solid var(--line-strong); border-radius: var(--radius);
+  box-shadow: var(--shadow-lg); padding: .35rem;
+  animation: drp-in .15s var(--ease);
+}
+.upop .uhead {
+  display: flex; align-items: center; gap: .65rem;
+  padding: .6rem .6rem .7rem; border-bottom: 1px solid var(--line); margin-bottom: .35rem;
+}
+.upop .ini.big {
+  width: 36px; height: 36px; flex: none; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--accent); color: var(--accent-fg); font-size: 13px; font-weight: 800;
+}
+.upop .uhead > div { display: flex; flex-direction: column; min-width: 0; }
+.upop .uhead b { font-size: 13px; font-weight: 650; }
+.upop .uhead span { font-size: 11px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; }
+.upop .ustatus { padding: 0 .6rem .5rem; font-size: 11px; font-weight: 600; }
+.upop .ustatus .ok { color: var(--profit); }
+.upop .ustatus .off { color: var(--amber); }
+.upop button {
+  width: 100%; justify-content: flex-start; gap: .6rem;
+  background: none; border: 0; border-radius: var(--radius-sm);
+  padding: .55rem .6rem; font-size: 13px; font-weight: 600; color: var(--fg-dim);
+}
+.upop button:hover { background: var(--panel-2); color: var(--fg); }
+.upop button.danger:hover { background: var(--loss-soft); color: var(--loss); }
+.upop button .ic { width: 16px; text-align: center; opacity: .85; }
+
+.setrow.inline { border: 0; padding: 0; justify-content: flex-start; gap: .7rem; }

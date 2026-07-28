@@ -29,6 +29,68 @@ export default function Settings() {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // profile
+  const [name, setName] = useState("");
+  const [mail, setMail] = useState("");
+  const [pmsg, setPmsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [pbusy, setPbusy] = useState(false);
+  // password
+  const [pwOld, setPwOld] = useState("");
+  const [pwNew, setPwNew] = useState("");
+  const [wmsg, setWmsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [wbusy, setWbusy] = useState(false);
+
+  // Seed the profile fields once /auth/me lands.
+  useEffect(() => {
+    if (!me) return;
+    setName(me.display_name ?? "");
+    setMail(me.email);
+  }, [me]);
+
+  const dirtyProfile = !!me && (name !== (me.display_name ?? "") || mail !== me.email);
+
+  const saveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPbusy(true); setPmsg(null);
+    const body: Record<string, string> = {};
+    if (name !== (me?.display_name ?? "")) body.display_name = name;
+    if (mail !== me?.email) body.email = mail;
+    try {
+      const r = await fetch("/api/auth/profile", {
+        method: "PATCH", credentials: "include",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        const d = (await r.json().catch(() => ({})))?.detail;
+        throw new Error(typeof d === "string" ? d : "");
+      }
+      dispatch(api.util.invalidateTags(["Auth"]));
+      setPmsg({ ok: true, text: t("set_saved") });
+    } catch (err) {
+      setPmsg({ ok: false, text: (err as Error).message || t("set_save_failed") });
+    } finally { setPbusy(false); }
+  };
+
+  const changePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setWbusy(true); setWmsg(null);
+    try {
+      const r = await fetch("/api/auth/password", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ current_password: pwOld, new_password: pwNew }),
+      });
+      if (!r.ok) {
+        const d = (await r.json().catch(() => ({})))?.detail;
+        throw new Error(typeof d === "string" ? d : "");
+      }
+      setPwOld(""); setPwNew("");
+      setWmsg({ ok: true, text: t("set_pw_changed") });
+    } catch (err) {
+      setWmsg({ ok: false, text: (err as Error).message || t("set_save_failed") });
+    } finally { setWbusy(false); }
+  };
+
   const load = () => fetch("/api/auth/credentials", { credentials: "include" })
     .then((r) => (r.ok ? r.json() : null))
     .then((s: CredStatus | null) => { if (s) { setStatus(s); setFlexQuery(s.flex_query_id); } })
@@ -63,31 +125,58 @@ export default function Settings() {
     } finally { setBusy(false); }
   };
 
-  const signOut = async () => {
-    await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
-    dispatch(api.util.resetApiState());
-    window.location.replace("/");
-  };
-
   return (
     <>
-      <Panel title={t("set_account")}
-        right={<button className="ghost" onClick={signOut}>{t("auth_signout")}</button>}>
-        <div className="setgrid">
-          <div className="setrow">
-            <span className="k">{t("auth_email")}</span>
-            <span className="v mono ltr">{me?.email ?? "—"}</span>
+      <form onSubmit={saveProfile}>
+        <Panel title={t("set_profile")}>
+          <div className="setform">
+            <label>
+              <span>{t("auth_name")}</span>
+              <input className="input" value={name} autoComplete="name"
+                onChange={(e) => setName(e.target.value)} placeholder={t("auth_name_ph")} />
+            </label>
+            <label>
+              <span>{t("auth_email")}</span>
+              <input className="input" type="email" dir="ltr" value={mail}
+                autoComplete="email" onChange={(e) => setMail(e.target.value)} />
+            </label>
+            <div className="setrow inline">
+              <span className="k">{t("set_role")}</span>
+              <Pill kind={me?.role === "owner" ? "info" : "mut"}>{me?.role ?? "—"}</Pill>
+            </div>
+            {pmsg && <div className={pmsg.ok ? "setok" : "loginerr"}>{pmsg.text}</div>}
+            <div className="row">
+              <button className="primary" type="submit" disabled={pbusy || !dirtyProfile}>
+                {pbusy ? t("auth_working") : t("set_save")}
+              </button>
+            </div>
           </div>
-          <div className="setrow">
-            <span className="k">{t("auth_name")}</span>
-            <span className="v">{me?.display_name || "—"}</span>
+        </Panel>
+      </form>
+
+      <form onSubmit={changePassword}>
+        <Panel title={t("set_password")}>
+          <div className="setform">
+            <label>
+              <span>{t("set_pw_current")}</span>
+              <input className="input" type="password" dir="ltr" value={pwOld}
+                autoComplete="current-password" onChange={(e) => setPwOld(e.target.value)} />
+            </label>
+            <label>
+              <span>{t("set_pw_new")}</span>
+              <input className="input" type="password" dir="ltr" value={pwNew}
+                autoComplete="new-password" onChange={(e) => setPwNew(e.target.value)}
+                placeholder={t("auth_password_rule")} />
+            </label>
+            {wmsg && <div className={wmsg.ok ? "setok" : "loginerr"}>{wmsg.text}</div>}
+            <div className="row">
+              <button className="primary" type="submit" disabled={wbusy || !pwOld || !pwNew}>
+                {wbusy ? t("auth_working") : t("set_pw_change")}
+              </button>
+            </div>
           </div>
-          <div className="setrow">
-            <span className="k">{t("set_role")}</span>
-            <span className="v"><Pill kind={me?.role === "owner" ? "info" : "mut"}>{me?.role}</Pill></span>
-          </div>
-        </div>
-      </Panel>
+        </Panel>
+      </form>
 
       <form onSubmit={save}>
         <Panel title={t("set_broker")}
