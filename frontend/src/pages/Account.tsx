@@ -4,7 +4,8 @@ import {
   useIbAccountQuery, useIbPositionsQuery, useIbExecutionsQuery, useIbOrdersQuery,
   useIbPnlQuery, useIbNavSeriesQuery,
 } from "../store/api";
-import { Panel, Empty, Tile, PnLTile, StatusPill, Pill } from "../components/ui";
+import { Panel, Empty, StatusPill, Pill } from "../components/ui";
+import { Cluster, type MetricDef } from "../components/Metrics";
 import DataGrid, { numCol, dateCol, pnlCol, asDate, fmtDateTime } from "../components/DataGrid";
 import { useT } from "../i18n/useT";
 import { money, num, dt } from "../lib/format";
@@ -83,19 +84,78 @@ export default function Account() {
   const s = acct?.summary ?? {};
   const curve = (navs?.series ?? []).map((p) => ({ t: dt(p.ts), nav: p.net_liq }));
 
+  const A = (k: string) => (s[k] ? +s[k] : null);
+  const marginUse = A("NetLiquidation") && A("InitMarginReq")
+    ? A("InitMarginReq")! / A("NetLiquidation")! : null;
+
+  const metrics: MetricDef[] = [
+    { k: t("perf_unrealized"), v: pnl?.unrealized != null ? money(pnl.unrealized) : "—",
+      tone: (pnl?.unrealized ?? 0) >= 0 ? "pos" : "neg",
+      detail: { note: t("m_note_unrealized") } },
+
+    { k: t("buying_power"), v: A("BuyingPower") ? money(A("BuyingPower")!) : "—",
+      detail: { note: t("m_note_live_acct") } },
+
+    { k: t("init_margin"), v: A("InitMarginReq") ? money(A("InitMarginReq")!) : "—",
+      meter: marginUse ?? undefined,
+      sub: marginUse != null ? `${num(marginUse * 100, 1)}% ${t("m_of_nav")}` : undefined,
+      detail: { rows: [
+        { k: t("maint_margin"), v: A("MaintMarginReq") ? money(A("MaintMarginReq")!) : "—" },
+        { k: t("net_liq"), v: A("NetLiquidation") ? money(A("NetLiquidation")!) : "—" },
+      ], note: t("m_note_margin") } },
+
+    { k: t("excess_liq"), v: A("ExcessLiquidity") ? money(A("ExcessLiquidity")!) : "—",
+      tone: "accent", detail: { note: t("m_note_live_acct") } },
+
+    { k: t("avail_funds"), v: A("AvailableFunds") ? money(A("AvailableFunds")!) : "—",
+      detail: { note: t("m_note_live_acct") } },
+
+    { k: t("live_positions"), v: pos?.items.length ?? 0, tone: "accent",
+      detail: { rows: (pos?.items ?? []).slice(0, 8).map((p) => ({
+        k: `${p.symbol} ${p.right || p.secType} ${p.strike ? num(p.strike, 0) : ""}`.trim(),
+        v: p.position, tone: p.position >= 0 ? "pos" : "neg" })),
+        note: t("req_positions") } },
+
+    { k: t("open_orders"), v: ord?.open.length ?? 0,
+      detail: { rows: (ord?.open ?? []).slice(0, 8).map((o) => ({
+        k: `${o.action} ${o.orderType} ${o.tif}`, v: num(o.lmtPrice) })) } },
+
+    { k: t("executions"), v: exe?.items.length ?? 0,
+      sub: t("req_exec"),
+      detail: { note: t("req_exec") } },
+  ];
+
+
   return (
     <>
       <div className="row" style={{ justifyContent: "flex-end" }}>
         <Pill kind="ok">{t("tws_badge")}</Pill>
       </div>
-      <div className="tiles">
-        <Tile k={t("net_liq")} cls="kpi small" tone="accent">
-          {s.NetLiquidation ? money(+s.NetLiquidation) : "—"}</Tile>
-        <PnLTile k={t("perf_today")} value={pnl?.daily ?? null} small />
-        <PnLTile k={t("perf_unrealized")} value={pnl?.unrealized ?? null} small />
-        <Tile k={t("buying_power")} cls="kpi small" tone="flat">
-          {s.BuyingPower ? money(+s.BuyingPower) : "—"}</Tile>
-      </div>
+      <Cluster
+        hero={{
+          label: t("perf_today"), value: pnl?.daily ?? null,
+          curve: (navs?.series ?? []).map((p) => p.net_liq ?? 0).filter((n) => n > 0),
+          sub: t("m_note_today"),
+          right: (
+            <>
+              <div className="k">{t("net_liq")}</div>
+              <div className="v" style={{ fontSize: "1.6rem" }}>
+                {s.NetLiquidation ? money(+s.NetLiquidation) : "—"}
+              </div>
+              <div className="sub">{acct?.account ?? "—"}</div>
+            </>
+          ),
+          detail: {
+            rows: [
+              { k: t("perf_unrealized"), v: pnl?.unrealized != null ? money(pnl.unrealized) : "—",
+                tone: (pnl?.unrealized ?? 0) >= 0 ? "pos" : "neg" },
+              { k: t("realized"), v: pnl?.realized != null ? money(pnl.realized) : "—" },
+              { k: t("net_liq"), v: s.NetLiquidation ? money(+s.NetLiquidation) : "—" },
+            ],
+            note: t("m_note_today"),
+          },
+        }}
+        metrics={metrics} />
 
       <Panel title={t("perf_nav_curve")} right={<span className="muted">{navs?.series?.length ?? 0} pts</span>}>
         {curve.length < 2 ? <div className="empty">{t("perf_history_note")}</div> : (

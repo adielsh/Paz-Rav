@@ -1,7 +1,56 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useT } from "../i18n/useT";
 import { PnL, type Tone } from "./ui";
+
+/* --------------------------------------------------------------- cluster -- */
+
+export interface Detail {
+  /** Overrides the headline value shown in the dialog; defaults to the cell's own. */
+  value?: ReactNode;
+  formula?: ReactNode;
+  rows?: DetailRow[];
+  note?: ReactNode;
+}
+export interface MetricDef extends Omit<MetricProps, "onClick"> { detail?: Detail }
+export interface HeroDef {
+  label: string; value: number | null | undefined;
+  format?: (v: number) => string;
+  curve?: number[]; sub?: ReactNode; right?: ReactNode; detail?: Detail;
+}
+
+/**
+ * The one metric surface every page uses: a hero reading plus a dense cell grid, each
+ * cell opening its own breakdown. Pages declare data; layout, interaction and the dialog
+ * live here, so a figure looks and behaves the same wherever it appears.
+ */
+export function Cluster({ hero, metrics }: { hero?: HeroDef; metrics: MetricDef[] }) {
+  const [open, setOpen] = useState<number | null>(null);
+  const active = open == null ? null
+    : open === -1
+      ? (hero ? { title: hero.label, d: hero.detail, fallback: <PnL value={hero.value} format={hero.format} /> } : null)
+      : (metrics[open] ? { title: metrics[open].k, d: metrics[open].detail, fallback: metrics[open].v } : null);
+
+  return (
+    <>
+      <div className="cluster">
+        {hero && (
+          <HeroMetric {...hero} onClick={hero.detail ? () => setOpen(-1) : undefined} />
+        )}
+        <div className="cells">
+          {metrics.map((m, i) => (
+            <Metric key={i} {...m} onClick={m.detail ? () => setOpen(i) : undefined} />
+          ))}
+        </div>
+      </div>
+      {active && (
+        <MetricModal open onClose={() => setOpen(null)} title={active.title}
+          value={active.d?.value ?? active.fallback}
+          formula={active.d?.formula} rows={active.d?.rows} note={active.d?.note} />
+      )}
+    </>
+  );
+}
 
 /* ------------------------------------------------------------------ hero -- */
 
@@ -9,9 +58,10 @@ import { PnL, type Tone } from "./ui";
  * The one number the page exists to answer, with the period's equity curve drawn
  * behind it. Everything else on the panel is context for this.
  */
-export function HeroMetric({ label, value, sub, curve, onClick, right }: {
+export function HeroMetric({ label, value, sub, curve, onClick, right, format }: {
   label: string; value: number | null | undefined; sub?: ReactNode;
   curve?: number[]; onClick?: () => void; right?: ReactNode;
+  format?: (v: number) => string;
 }) {
   const tone: Tone = value == null ? "flat" : value > 0 ? "pos" : value < 0 ? "neg" : "flat";
   return (
@@ -21,7 +71,7 @@ export function HeroMetric({ label, value, sub, curve, onClick, right }: {
       {curve && curve.length > 1 && <Spark data={curve} tone={tone} fill />}
       <div className="heroin">
         <div className="k">{label}</div>
-        <div className="v"><PnL value={value} /></div>
+        <div className="v"><PnL value={value} format={format} /></div>
         {sub && <div className="sub">{sub}</div>}
       </div>
       {right && <div className="heroright">{right}</div>}

@@ -6,7 +6,7 @@ import {
 import type { ColDef } from "ag-grid-community";
 import { useFlexDataQuery } from "../store/api";
 import { Panel, Empty, Pill, PnL } from "../components/ui";
-import { HeroMetric, Metric, MetricModal, type DetailRow } from "../components/Metrics";
+import { Cluster, type MetricDef } from "../components/Metrics";
 import DataGrid, { numCol, dateCol, pnlCol, asDate } from "../components/DataGrid";
 import DateRangePicker, { type DateRange } from "../components/DateRangePicker";
 import { useT } from "../i18n/useT";
@@ -28,7 +28,6 @@ export default function RealAccount() {
   const ax = { stroke: C.axis, fontSize: 12, tickLine: false } as const;
   const { data, isFetching } = useFlexDataQuery();
   const [status, setStatus] = useState<StatusFilter>("all");
-  const [detail, setDetail] = useState<MetricId | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const toggleRow = (k: string) => setExpanded((prev) => {
     const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n;
@@ -172,6 +171,75 @@ export default function RealAccount() {
   const capital = (nav?.start ?? 0) + (nav?.deposits ?? 0);
   const retPct = capital > 0 ? (a.total / capital) * 100 : 0;
 
+
+  const metrics: MetricDef[] = [
+    { k: t("a_win_rate"), tone: a.winRate >= 0.5 ? "pos" : "neg",
+      v: a.decided ? num(a.winRate * 100, 1) + "%" : "—",
+      ratio: { win: a.wins, loss: a.losses }, sub: `${a.wins}W · ${a.losses}L`,
+      detail: { formula: <>{a.wins} ÷ ({a.wins} + {a.losses}) × 100</>,
+        rows: [{ k: t("a_wins"), v: a.wins, tone: "pos" },
+               { k: t("a_losses"), v: a.losses, tone: "neg" }],
+        note: t("m_note_open_excluded") } },
+
+    { k: t("a_profit_factor"), tone: pf >= 1 ? "pos" : "neg",
+      v: pf === Infinity ? "∞" : num(pf, 2),
+      meter: pf === Infinity ? 1 : Math.min(1, pf / 2),
+      detail: { formula: <>{money(a.grossWin)} ÷ {money(a.grossLoss)}</>, note: t("m_note_pf") } },
+
+    { k: t("perf_trades"), tone: "accent", v: a.decided,
+      sub: `+${a.openCount} ${t("perf_open_now")}`,
+      detail: { rows: [{ k: t("perf_decided"), v: a.decided },
+                       { k: t("perf_open_now"), v: a.openCount }],
+        note: t("m_note_open_excluded") } },
+
+    { k: t("a_avg_win"), tone: "pos", v: money(a.avgWin),
+      detail: { formula: <>{money(a.grossWin)} ÷ {a.wins}</> } },
+
+    { k: t("a_avg_loss"), tone: "neg", v: money(a.avgLoss),
+      detail: { formula: <>{money(-a.grossLoss)} ÷ {a.losses}</> } },
+
+    { k: t("perf_nav_change_period"), tone: (navPeriod?.pnl ?? 0) >= 0 ? "pos" : "neg",
+      v: navPeriod ? money(navPeriod.pnl) : "—",
+      spark: navPeriod?.curve.map((c) => c.nav),
+      sub: navPeriod ? `${navPeriod.days} ${t("perf_days")}` : undefined,
+      detail: {
+        formula: navPeriod
+          ? <>{money(navPeriod.endNav)} − {money(navPeriod.startNav)} − {money(navPeriod.deposits)} deposits</>
+          : undefined,
+        rows: navPeriod ? [
+          { k: t("m_nav_start"), v: money(navPeriod.startNav) },
+          { k: t("m_nav_end"), v: money(navPeriod.endNav) },
+          { k: t("m_deposits_in"), v: money(navPeriod.deposits) },
+          { k: t("perf_days"), v: navPeriod.days },
+          { k: t("perf_return_period"), v: pct(navPeriod.pct),
+            tone: navPeriod.pct >= 0 ? "pos" : "neg" },
+        ] : undefined,
+        note: t("m_note_nav") } },
+
+    { k: t("a_best"), tone: "pos", v: money(a.best), detail: { note: t("m_note_position") } },
+    { k: t("a_worst"), tone: "neg", v: money(a.worst), detail: { note: t("m_note_position") } },
+
+    { k: t("perf_commissions"), tone: "neg",
+      v: periodCommissions != null ? money(periodCommissions) : "—",
+      detail: { formula: <>Σ commission on every fill within<br />{range.from} → {range.to}</>,
+        note: t("m_note_comm") } },
+
+    { k: t("perf_mtm"), muted: true, v: money(nav?.mtm ?? 0), sub: t("perf_stmt_short"),
+      detail: { note: t("perf_whole_stmt") } },
+
+    { k: t("perf_nav_end"), muted: true, v: money(navEnd), sub: t("perf_stmt_short"),
+      detail: { rows: [
+        { k: t("m_nav_start"), v: money(nav?.start ?? 0) },
+        { k: t("perf_capital"), v: money(nav?.deposits ?? 0) },
+        { k: t("m_lifetime_pnl"), v: money(navEnd - (nav?.start ?? 0) - (nav?.deposits ?? 0)),
+          tone: navEnd - (nav?.start ?? 0) - (nav?.deposits ?? 0) >= 0 ? "pos" : "neg" },
+      ], note: t("perf_whole_stmt") } },
+
+    { k: t("perf_capital"), muted: true, v: money(capital), sub: t("perf_stmt_short"),
+      detail: { formula: <>{money(nav?.start ?? 0)} + {money(nav?.deposits ?? 0)} deposits</>,
+        note: t("m_note_deposits") } },
+  ];
+
   return (
     <>
       <div className="row" style={{ justifyContent: "space-between" }}>
@@ -186,12 +254,12 @@ export default function RealAccount() {
 
       {/* Instrument cluster: one hero reading plus a dense grid, sized so the whole
           account state fits without scrolling. Every cell opens its own breakdown. */}
-      <div className="cluster">
-        <HeroMetric label={t("perf_realized")} value={a.total}
-          curve={a.equity.map((e) => e.equity)}
-          sub={`${t("perf_from")} ${a.decided} ${t("perf_decided")}`}
-          onClick={() => setDetail("realized")}
-          right={
+      <Cluster
+        hero={{
+          label: t("perf_realized"), value: a.total,
+          curve: a.equity.map((e) => e.equity),
+          sub: `${t("perf_from")} ${a.decided} ${t("perf_decided")}`,
+          right: (
             <>
               <div className="k">{t("perf_return_period")}</div>
               <div className="v" style={{ fontSize: "1.6rem" }}>
@@ -201,62 +269,20 @@ export default function RealAccount() {
                 {navPeriod ? `${money(navPeriod.startNav)} → ${money(navPeriod.endNav)}` : t("perf_no_nav")}
               </div>
             </>
-          } />
-
-        <div className="cells">
-          <Metric k={t("a_win_rate")} tone={a.winRate >= 0.5 ? "pos" : "neg"}
-            v={a.decided ? num(a.winRate * 100, 1) + "%" : "—"}
-            ratio={{ win: a.wins, loss: a.losses }}
-            sub={`${a.wins}W · ${a.losses}L`}
-            onClick={() => setDetail("winrate")} />
-
-          <Metric k={t("a_profit_factor")} tone={pf >= 1 ? "pos" : "neg"}
-            v={pf === Infinity ? "∞" : num(pf, 2)}
-            meter={pf === Infinity ? 1 : Math.min(1, pf / 2)}
-            sub={`${t("a_profit_factor")} ${pf >= 1 ? "≥" : "<"} 1.00`}
-            onClick={() => setDetail("pf")} />
-
-          <Metric k={t("perf_trades")} tone="accent" v={a.decided}
-            sub={`+${a.openCount} ${t("perf_open_now")}`}
-            onClick={() => setDetail("trades")} />
-
-          <Metric k={t("a_avg_win")} tone="pos" v={money(a.avgWin)}
-            onClick={() => setDetail("avgwin")} />
-
-          <Metric k={t("a_avg_loss")} tone="neg" v={money(a.avgLoss)}
-            onClick={() => setDetail("avgloss")} />
-
-          <Metric k={t("perf_nav_change_period")}
-            tone={(navPeriod?.pnl ?? 0) >= 0 ? "pos" : "neg"}
-            v={navPeriod ? money(navPeriod.pnl) : "—"}
-            spark={navPeriod?.curve.map((c) => c.nav)}
-            sub={navPeriod ? `${navPeriod.days} ${t("perf_days")}` : undefined}
-            onClick={() => setDetail("navchange")} />
-
-          <Metric k={t("a_best")} tone="pos" v={money(a.best)}
-            onClick={() => setDetail("best")} />
-
-          <Metric k={t("a_worst")} tone="neg" v={money(a.worst)}
-            onClick={() => setDetail("worst")} />
-
-          <Metric k={t("perf_commissions")} tone="neg"
-            v={periodCommissions != null ? money(periodCommissions) : "—"}
-            onClick={() => setDetail("comm")} />
-
-          <Metric k={t("perf_mtm")} muted v={money(nav?.mtm ?? 0)}
-            sub={t("perf_stmt_short")} onClick={() => setDetail("mtm")} />
-
-          <Metric k={t("perf_nav_end")} muted v={money(navEnd)}
-            sub={t("perf_stmt_short")} onClick={() => setDetail("navend")} />
-
-          <Metric k={t("perf_capital")} muted v={money(capital)}
-            sub={t("perf_stmt_short")} onClick={() => setDetail("deposits")} />
-        </div>
-      </div>
-
-      <MetricDetail id={detail} onClose={() => setDetail(null)}
-        a={a} pf={pf} navPeriod={navPeriod} nav={nav} capital={capital}
-        commissions={periodCommissions} range={range} />
+          ),
+          detail: {
+            formula: <>Σ realized of every position closed within<br />{range.from} → {range.to}</>,
+            rows: [
+              { k: t("perf_decided"), v: a.decided },
+              { k: t("a_wins"), v: a.wins, tone: "pos" },
+              { k: t("a_losses"), v: a.losses, tone: "neg" },
+              { k: t("m_gross_win"), v: money(a.grossWin), tone: "pos" },
+              { k: t("m_gross_loss"), v: money(-a.grossLoss), tone: "neg" },
+            ],
+            note: t("m_note_close"),
+          },
+        }}
+        metrics={metrics} />
 
       <div className="note">{t("perf_scope")}</div>
 
@@ -384,132 +410,6 @@ function Legend() {
   );
 }
 
-
-type MetricId = "realized" | "winrate" | "pf" | "trades" | "avgwin" | "avgloss"
-  | "best" | "worst" | "comm" | "navchange" | "mtm" | "navend" | "deposits";
-
-type Analytics = ReturnType<typeof build>;
-type NavPeriod = ReturnType<typeof navReturn>;
-
-/**
- * Per-metric breakdown. Each one shows the formula with the real values substituted,
- * because "where does this number come from" is the question that decides whether the
- * figure can be trusted against the broker's own reporting.
- */
-function MetricDetail({ id, onClose, a, pf, navPeriod, nav, capital, commissions, range }: {
-  id: MetricId | null; onClose: () => void;
-  a: Analytics; pf: number; navPeriod: NavPeriod;
-  nav?: { mtm: number; end: number; start: number; deposits: number } | null;
-  capital: number; commissions: number | null; range: DateRange;
-}) {
-  const { t } = useT();
-  if (!id) return null;
-  const win = `${range.from} → ${range.to}`;
-  const M = (v: number | null | undefined) => <PnL value={v} />;
-
-  const spec: Record<MetricId, {
-    title: string; value: React.ReactNode;
-    formula?: React.ReactNode; rows?: DetailRow[]; note?: React.ReactNode;
-  }> = {
-    realized: {
-      title: t("perf_realized"), value: M(a.total),
-      formula: <>Σ realized of every position closed within<br />{win}</>,
-      rows: [
-        { k: t("perf_decided"), v: a.decided },
-        { k: t("a_wins"), v: a.wins, tone: "pos" },
-        { k: t("a_losses"), v: a.losses, tone: "neg" },
-        { k: t("m_gross_win"), v: money(a.grossWin), tone: "pos" },
-        { k: t("m_gross_loss"), v: money(-a.grossLoss), tone: "neg" },
-      ],
-      note: t("m_note_close"),
-    },
-    winrate: {
-      title: t("a_win_rate"), value: a.decided ? num(a.winRate * 100, 1) + "%" : "—",
-      formula: <>{a.wins} ÷ ({a.wins} + {a.losses}) × 100</>,
-      rows: [
-        { k: t("a_wins"), v: a.wins, tone: "pos" },
-        { k: t("a_losses"), v: a.losses, tone: "neg" },
-        { k: t("perf_decided"), v: a.decided },
-      ],
-      note: t("m_note_open_excluded"),
-    },
-    pf: {
-      title: t("a_profit_factor"), value: pf === Infinity ? "∞" : num(pf, 2),
-      formula: <>{money(a.grossWin)} ÷ {money(a.grossLoss)}</>,
-      rows: [
-        { k: t("m_gross_win"), v: money(a.grossWin), tone: "pos" },
-        { k: t("m_gross_loss"), v: money(-a.grossLoss), tone: "neg" },
-      ],
-      note: t("m_note_pf"),
-    },
-    trades: {
-      title: t("perf_trades"), value: a.decided,
-      rows: [
-        { k: t("perf_decided"), v: a.decided },
-        { k: t("perf_open_now"), v: a.openCount },
-        { k: t("m_total_rows"), v: a.count },
-      ],
-      note: t("m_note_open_excluded"),
-    },
-    avgwin: {
-      title: t("a_avg_win"), value: M(a.avgWin),
-      formula: <>{money(a.grossWin)} ÷ {a.wins}</>,
-      rows: [{ k: t("a_wins"), v: a.wins, tone: "pos" },
-             { k: t("m_gross_win"), v: money(a.grossWin), tone: "pos" }],
-    },
-    avgloss: {
-      title: t("a_avg_loss"), value: M(a.avgLoss),
-      formula: <>{money(-a.grossLoss)} ÷ {a.losses}</>,
-      rows: [{ k: t("a_losses"), v: a.losses, tone: "neg" },
-             { k: t("m_gross_loss"), v: money(-a.grossLoss), tone: "neg" }],
-    },
-    best:  { title: t("a_best"),  value: M(a.best),  note: t("m_note_position") },
-    worst: { title: t("a_worst"), value: M(a.worst), note: t("m_note_position") },
-    comm: {
-      title: t("perf_commissions"), value: M(commissions),
-      formula: <>Σ commission on every fill within<br />{win}</>,
-      note: t("m_note_comm"),
-    },
-    navchange: {
-      title: t("perf_nav_change_period"), value: M(navPeriod?.pnl ?? null),
-      formula: navPeriod
-        ? <>{money(navPeriod.endNav)} − {money(navPeriod.startNav)} − {money(navPeriod.deposits)} deposits</>
-        : undefined,
-      rows: navPeriod ? [
-        { k: t("m_nav_start"), v: money(navPeriod.startNav) },
-        { k: t("m_nav_end"), v: money(navPeriod.endNav) },
-        { k: t("m_deposits_in"), v: money(navPeriod.deposits) },
-        { k: t("perf_days"), v: navPeriod.days },
-        { k: t("perf_return_period"), v: pct(navPeriod.pct),
-          tone: navPeriod.pct >= 0 ? "pos" : "neg" },
-      ] : undefined,
-      note: t("m_note_nav"),
-    },
-    mtm: {
-      title: t("perf_mtm"), value: M(nav?.mtm ?? null),
-      note: t("perf_whole_stmt"),
-    },
-    navend: {
-      title: t("perf_nav_end"), value: money(nav?.end ?? 0),
-      rows: [
-        { k: t("m_nav_start"), v: money(nav?.start ?? 0) },
-        { k: t("perf_capital"), v: money(nav?.deposits ?? 0) },
-        { k: t("m_lifetime_pnl"), v: money((nav?.end ?? 0) - (nav?.start ?? 0) - (nav?.deposits ?? 0)),
-          tone: (nav?.end ?? 0) - (nav?.start ?? 0) - (nav?.deposits ?? 0) >= 0 ? "pos" : "neg" },
-      ],
-      note: t("perf_whole_stmt"),
-    },
-    deposits: {
-      title: t("perf_capital"), value: money(capital),
-      formula: <>{money(nav?.start ?? 0)} opening NAV + {money(nav?.deposits ?? 0)} net deposits</>,
-      note: t("m_note_deposits"),
-    },
-  };
-
-  const d = spec[id];
-  return <MetricModal open onClose={onClose} title={d.title} value={d.value}
-    formula={d.formula} rows={d.rows} note={d.note} />;
-}
 
 function StatusCell({ po }: { po: Position }) {
   const { t } = useT();

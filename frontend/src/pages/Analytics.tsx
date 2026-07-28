@@ -4,9 +4,11 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine,
 } from "recharts";
 import { useTradesQuery, useGateDecisionsQuery } from "../store/api";
-import { Tile, PnLTile, Panel, Empty } from "../components/ui";
+import { Panel, Empty } from "../components/ui";
+import { Cluster, type MetricDef } from "../components/Metrics";
 import { useT } from "../i18n/useT";
 import { money, num } from "../lib/format";
+import { PnL } from "../components/ui";
 import { useChartTheme, CHART_TIP } from "../lib/chartTheme";
 import type { Trade } from "../store/types";
 
@@ -42,27 +44,78 @@ export default function Analytics() {
 
   const pf = a.grossLoss > 0 ? a.grossWin / a.grossLoss : Infinity;
 
+  const metrics: MetricDef[] = [
+    { k: t("a_win_rate"), v: num(a.winRate * 100, 1) + "%",
+      tone: a.winRate >= 0.5 ? "pos" : "neg",
+      ratio: { win: a.wins, loss: a.losses },
+      sub: `${a.wins}W · ${a.losses}L`,
+      detail: { formula: <>{a.wins} ÷ {a.closed} × 100</>,
+        rows: [{ k: t("a_wins"), v: a.wins, tone: "pos" },
+               { k: t("a_losses"), v: a.losses, tone: "neg" }] } },
+
+    { k: t("a_profit_factor"), v: pf === Infinity ? "∞" : num(pf, 2),
+      tone: pf >= 1 ? "pos" : "neg", meter: pf === Infinity ? 1 : Math.min(1, pf / 2),
+      detail: { formula: <>{money(a.grossWin)} ÷ {money(a.grossLoss)}</>, note: t("m_note_pf") } },
+
+    { k: t("a_expectancy"), v: money(a.expectancy), tone: a.expectancy >= 0 ? "pos" : "neg",
+      detail: { formula: <>{money(a.total)} ÷ {a.closed}</>, note: t("m_note_expectancy") } },
+
+    { k: t("a_max_dd"), v: money(-a.maxDD), tone: "neg",
+      spark: a.equity.map((e) => e.dd),
+      detail: { note: t("m_note_dd") } },
+
+    { k: t("a_total_trades"), v: a.closed, tone: "accent",
+      detail: { rows: a.outcomes.map((o) => ({ k: o.name, v: o.value })) } },
+
+    { k: t("a_avg_win"), v: money(a.avgWin), tone: "pos",
+      detail: { formula: <>{money(a.grossWin)} ÷ {a.wins}</> } },
+
+    { k: t("a_avg_loss"), v: money(a.avgLoss), tone: "neg",
+      detail: { formula: <>{money(-a.grossLoss)} ÷ {a.losses}</> } },
+
+    { k: t("a_best"), v: money(a.best), tone: "pos", detail: { note: t("m_note_position") } },
+    { k: t("a_worst"), v: money(a.worst), tone: "neg", detail: { note: t("m_note_position") } },
+
+    { k: t("a_avg_credit"), v: num(a.avgCredit, 2),
+      detail: { note: t("m_note_credit") } },
+
+    { k: t("a_avg_dte"), v: num(a.avgDte, 0),
+      detail: { note: t("m_note_dte") } },
+
+    { k: t("gate_rejects"), v: gateReasons.reduce((s2, g) => s2 + g.count, 0),
+      tone: "neg",
+      detail: { rows: gateReasons.slice(0, 5).map((g) => ({ k: g.reason, v: g.count })),
+        note: t("m_note_gates") } },
+  ];
+
+
   return (
     <>
-      {/* KPI grid */}
-      <div className="tiles">
-        <Tile k={t("a_win_rate")} cls="kpi" tone={a.winRate >= 0.5 ? "pos" : "neg"}
-          hint={`${a.wins} W / ${a.losses} L`}>{num(a.winRate * 100, 1)}%</Tile>
-        <Tile k={t("a_profit_factor")} cls="kpi" tone={pf >= 1 ? "pos" : "neg"}>
-          {pf === Infinity ? "∞" : num(pf, 2)}</Tile>
-        <PnLTile k={t("a_expectancy")} value={a.expectancy} />
-        <PnLTile k={t("a_max_dd")} value={-a.maxDD} />
-        <PnLTile k={t("a_total_pnl")} value={a.total} />
-        <Tile k={t("a_total_trades")} cls="kpi" tone="accent">{a.closed}</Tile>
-      </div>
-      <div className="tiles">
-        <PnLTile k={t("a_avg_win")} value={a.avgWin} small />
-        <PnLTile k={t("a_avg_loss")} value={a.avgLoss} small />
-        <PnLTile k={t("a_best")} value={a.best} small />
-        <PnLTile k={t("a_worst")} value={a.worst} small />
-        <Tile k={t("a_avg_credit")} cls="kpi small" tone="flat">{num(a.avgCredit, 2)}</Tile>
-        <Tile k={t("a_avg_dte")} cls="kpi small" tone="flat">{num(a.avgDte, 0)}</Tile>
-      </div>
+      <Cluster
+        hero={{
+          label: t("a_total_pnl"), value: a.total,
+          curve: a.equity.map((e) => e.equity),
+          sub: `${a.closed} ${t("a_total_trades").toLowerCase()}`,
+          right: (
+            <>
+              <div className="k">{t("a_expectancy")}</div>
+              <div className="v" style={{ fontSize: "1.6rem" }}>
+                <PnL value={a.expectancy} />
+              </div>
+              <div className="sub">{t("a_pnl")} / {t("a_trades").toLowerCase()}</div>
+            </>
+          ),
+          detail: {
+            formula: <>{money(a.grossWin)} − {money(a.grossLoss)}</>,
+            rows: [
+              { k: t("m_gross_win"), v: money(a.grossWin), tone: "pos" },
+              { k: t("m_gross_loss"), v: money(-a.grossLoss), tone: "neg" },
+              { k: t("a_total_trades"), v: a.closed },
+            ],
+            note: t("m_note_demo"),
+          },
+        }}
+        metrics={metrics} />
 
       <div className="chartgrid">
         <Chart title={t("a_equity")}>
