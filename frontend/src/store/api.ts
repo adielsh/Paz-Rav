@@ -7,11 +7,16 @@ import type {
 // All data flows through one RTK Query slice — automatic caching, refetching, and loading state.
 export const api = createApi({
   reducerPath: "api",
-  baseQuery: fetchBaseQuery({ baseUrl: "/api" }),
-  tagTypes: ["Control", "Proposals"],
+  // credentials: "include" so the session cookie rides along with every request.
+  baseQuery: fetchBaseQuery({ baseUrl: "/api", credentials: "include" }),
+  tagTypes: ["Control", "Proposals", "Auth", "Flex"],
   // Poll live-ish views every 15s.
   refetchOnFocus: true,
   endpoints: (b) => ({
+    // ---- session ----
+    me: b.query<{ id: number; email: string; display_name: string | null; role: string;
+      has_flex: boolean; has_ib_login: boolean }, void>({
+      query: () => "/auth/me", providesTags: ["Auth"] }),
     // ---- Bot DB (Postgres) ----
     positions: b.query<Trade[], void>({ query: () => "/positions" }),
     trades: b.query<Trade[], number | void>({ query: (limit = 200) => `/trades?limit=${limit}` }),
@@ -44,11 +49,12 @@ export const api = createApi({
     // ---- Real TWS account data (paper) ----
     ibPnl: b.query<IbPnl, void>({ query: () => "/ib/pnl" }),
     ibNavSeries: b.query<IbNavSeries, void>({ query: () => "/ib/nav-series" }),
-    flexData: b.query<FlexData, void>({ query: () => "/flex/data" }),
+    flexData: b.query<FlexData, void>({ query: () => "/flex/data", providesTags: ["Flex"] }),
   }),
 });
 
 export const {
+  useMeQuery,
   usePositionsQuery, useTradesQuery, useGateDecisionsQuery, usePnlQuery, usePnlSeriesQuery,
   useControlQuery, useSetControlMutation, useProposalsQuery, useDecideProposalMutation,
   useIbStatusQuery, useIbAccountQuery, useIbPositionsQuery, useIbExecutionsQuery, useIbOrdersQuery,

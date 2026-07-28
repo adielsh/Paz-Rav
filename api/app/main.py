@@ -9,12 +9,12 @@ from __future__ import annotations
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import create_engine, text
 
-from . import ib_bridge, flex
+from . import auth, ib_bridge, flex
 
 DB_DSN = os.getenv("DB_DSN", "postgresql+psycopg://condor:condor@127.0.0.1:5432/condor")
 engine = create_engine(DB_DSN, future=True, pool_pre_ping=True)
@@ -48,20 +48,33 @@ def _ensure_proposals_table() -> None:
             "placed_credit double precision)"))
 
 
+# Auth wiring: dependencies are built against this engine, then handed to the routers
+# that need them so no module has to import the app itself.
+auth.ensure_tables(engine)
+USER_ID, USER_CREDS = auth.make_dependencies(engine)
+
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _ensure_nav_table()
     _ensure_proposals_table()
-    flex.ensure_cache_table()     # durable Flex cache survives restarts
     await ib_bridge.startup()      # best-effort connect to the paper gateway (read-only)
     yield
     await ib_bridge.shutdown()
 
 
 app = FastAPI(title="SPX Condor API", version="0.1.0", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+# Credentials travel in a cookie, so the browser must be allowed to send them and the
+# origin can no longer be a wildcard.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in os.getenv(
+        "CORS_ORIGINS", "http://127.0.0.1:8080,http://localhost:8080").split(",") if o.strip()],
+    allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.include_router(auth.build_router(engine, USER_ID))
 app.include_router(ib_bridge.router)
-app.include_router(flex.router)
+app.include_router(flex.build_router(USER_CREDS))
 
 
 def _rows(sql: str, **params) -> list[dict]:
@@ -80,13 +93,13 @@ def health() -> dict:
 
 
 @app.get("/positions")
-def positions() -> list[dict]:
+def positions(_: int = Depends(USER_ID)) -> list[dict]:
     """Open condors (durable view from the DB; IBKR remains the settlement source of truth)."""
     return _rows("SELECT * FROM trades WHERE status = 'open' ORDER BY created_at DESC")
 
 
 @app.get("/trades")
-def trades(limit: int = 500) -> list[dict]:
+def trades(limit: int = 500, _: int = Depends(USER_ID)) -> list[dict]:
     # LEFT JOIN realized P&L so the UI can compute win rate, avg win/loss, distributions.
     return _rows(
         "SELECT t.*, p.realized AS realized "
@@ -95,24 +108,24 @@ def trades(limit: int = 500) -> list[dict]:
 
 
 @app.get("/gate-decisions")
-def gate_decisions(limit: int = 100) -> list[dict]:
+def gate_decisions(limit: int = 100, _: int = Depends(USER_ID)) -> list[dict]:
     return _rows("SELECT * FROM gate_decisions ORDER BY created_at DESC LIMIT :limit", limit=limit)
 
 
 @app.get("/pnl")
-def pnl() -> dict:
+def pnl(_: int = Depends(USER_ID)) -> dict:
     rows = _rows("SELECT COALESCE(SUM(realized),0) AS total, COUNT(*) AS closed FROM pnl")
     return rows[0] if rows else {"total": 0, "closed": 0}
 
 
 @app.get("/pnl-series")
-def pnl_series() -> list[dict]:
+def pnl_series(_: int = Depends(USER_ID)) -> list[dict]:
     """Realized P&L points over time (frontend builds the cumulative equity curve)."""
     return _rows("SELECT computed_at, realized FROM pnl ORDER BY computed_at ASC")
 
 
 @app.get("/control")
-def get_control() -> dict:
+def get_control(_: int = Depends(USER_ID)) -> dict:
     rows = _rows("SELECT * FROM control WHERE id = 1")
     if not rows:
         raise HTTPException(404, "control row missing")
@@ -120,7 +133,7 @@ def get_control() -> dict:
 
 
 @app.get("/ib/nav-series")
-async def nav_series() -> dict:
+async def nav_series(_: int = Depends(USER_ID)) -> dict:
     """Real NAV time-series for the paper account. Records a snapshot (max ~1/hour) on each call
     so a genuine day/month/quarter/year curve builds up over time, then returns the whole series."""
     live = await ib_bridge.current_nav_pnl()
@@ -137,7 +150,7 @@ async def nav_series() -> dict:
 
 
 @app.get("/proposals")
-def proposals(limit: int = 100) -> list[dict]:
+def proposals(limit: int = 100, _: int = Depends(USER_ID)) -> list[dict]:
     """Entries the gates approved that are waiting on a human decision (plus recent history)."""
     return _rows(
         "SELECT * FROM trade_proposals "
@@ -182,12 +195,14 @@ def _decide(proposal_id: int, status: str, body: ProposalDecision) -> dict:
 
 
 @app.post("/proposals/{proposal_id}/approve")
-def approve_proposal(proposal_id: int, body: ProposalDecision) -> dict:
+def approve_proposal(proposal_id: int, body: ProposalDecision,
+                     _: int = Depends(USER_ID)) -> dict:
     return _decide(proposal_id, "approved", body)
 
 
 @app.post("/proposals/{proposal_id}/reject")
-def reject_proposal(proposal_id: int, body: ProposalDecision) -> dict:
+def reject_proposal(proposal_id: int, body: ProposalDecision,
+                    _: int = Depends(USER_ID)) -> dict:
     return _decide(proposal_id, "rejected", body)
 
 
@@ -198,9 +213,9 @@ class KillSwitch(BaseModel):
 
 
 @app.post("/control")
-def set_control(body: KillSwitch) -> dict:
+def set_control(body: KillSwitch, _: int = Depends(USER_ID)) -> dict:
     with engine.begin() as c:
         c.execute(text(
             "UPDATE control SET trading_enabled=:e, notes=:n, updated_by=:u, updated_at=now() "
             "WHERE id = 1"), {"e": body.trading_enabled, "n": body.notes, "u": body.updated_by})
-    return get_control()
+    return get_control(_)

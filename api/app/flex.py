@@ -5,7 +5,7 @@ Setup (done once by the user in Account Management):
   1. Reporting → Settings → Flex Web Service: enable it, generate a TOKEN.
   2. Reporting → Flex Queries → Activity Flex Query: include the sections
      "Trades" and "Change in NAV"; set a wide period (e.g. Last 365 Days). Note the QUERY ID.
-  3. Put FLEX_TOKEN and FLEX_QUERY_ID in .env.
+  3. Enter the token and query ID in Settings — they are stored per user, encrypted.
 
 Flow: SendRequest -> ReferenceCode -> GetStatement (retry while generating) -> parse XML.
 Results are cached (Flex is rate-limited) and never block the app when unconfigured.
@@ -20,52 +20,18 @@ import urllib.request
 import urllib.parse
 import xml.etree.ElementTree as ET
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from sqlalchemy import create_engine, text
 
 log = logging.getLogger("flex")
-router = APIRouter(prefix="/flex", tags=["flex"])
 
-TOKEN = os.getenv("FLEX_TOKEN", "")
-QUERY_ID = os.getenv("FLEX_QUERY_ID", "")
 BASE = "https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService"
 CACHE_TTL = 1800           # seconds; Flex is rate-limited, don't hammer it
-_cache: dict = {"ts": 0, "data": None}
+
 
 # Durable cache in Postgres so the big statement survives api restarts (and Flex is rarely hit).
 _engine = create_engine(os.getenv("DB_DSN", "postgresql+psycopg://condor:condor@postgres:5432/condor"),
                         future=True, pool_pre_ping=True)
-
-
-def ensure_cache_table() -> None:
-    try:
-        with _engine.begin() as c:
-            c.execute(text("CREATE TABLE IF NOT EXISTS flex_cache "
-                           "(id int PRIMARY KEY, fetched_at timestamptz DEFAULT now(), payload jsonb)"))
-    except Exception as e:
-        log.warning("flex_cache table init failed", extra={"error": str(e)})
-
-
-def _db_read() -> tuple[float, dict] | None:
-    try:
-        with _engine.connect() as c:
-            row = c.execute(text("SELECT extract(epoch from fetched_at) AS ts, payload "
-                                 "FROM flex_cache WHERE id = 1")).mappings().first()
-        if row and row["payload"]:
-            return float(row["ts"]), row["payload"]
-    except Exception as e:
-        log.warning("flex_cache read failed", extra={"error": str(e)})
-    return None
-
-
-def _db_write(payload: dict) -> None:
-    try:
-        with _engine.begin() as c:
-            c.execute(text("INSERT INTO flex_cache (id, fetched_at, payload) VALUES (1, now(), :p) "
-                           "ON CONFLICT (id) DO UPDATE SET fetched_at = now(), payload = :p"),
-                      {"p": json.dumps(payload)})
-    except Exception as e:
-        log.warning("flex_cache write failed", extra={"error": str(e)})
 
 
 def _get(url: str) -> str:
@@ -74,9 +40,13 @@ def _get(url: str) -> str:
         return r.read().decode("utf-8", "replace")
 
 
-def _fetch() -> dict:
-    """Run the two-step Flex flow and parse. Returns a structured dict."""
-    send = f"{BASE}/SendRequest?" + urllib.parse.urlencode({"t": TOKEN, "q": QUERY_ID, "v": "3"})
+def _fetch(token: str, query_id: str) -> dict:
+    """Run the two-step Flex flow and parse. Returns a structured dict.
+
+    Credentials are passed in rather than read from the environment: each user holds their
+    own Flex token, so the statement fetched here belongs to whoever is signed in.
+    """
+    send = f"{BASE}/SendRequest?" + urllib.parse.urlencode({"t": token, "q": query_id, "v": "3"})
     root = ET.fromstring(_get(send))
     status = (root.findtext("Status") or "").strip()
     if status != "Success":
@@ -88,7 +58,7 @@ def _fetch() -> dict:
     # Poll GetStatement — a wide (e.g. 365-day) statement can take a while to generate.
     stmt_xml = None
     for _ in range(20):
-        got = f"{base_url}?" + urllib.parse.urlencode({"t": TOKEN, "q": ref, "v": "3"})
+        got = f"{base_url}?" + urllib.parse.urlencode({"t": token, "q": ref, "v": "3"})
         text = _get(got)
         if "<FlexQueryResponse" in text:
             stmt_xml = text
@@ -207,39 +177,62 @@ def _f(v):
         return None
 
 
-@router.get("/status")
-def status() -> dict:
-    return {"configured": bool(TOKEN and QUERY_ID)}
-
-
-@router.get("/data")
-def data(refresh: bool = False) -> dict:
-    if not (TOKEN and QUERY_ID):
-        return {"configured": False, "ok": False,
-                "error": "Flex not configured — set FLEX_TOKEN and FLEX_QUERY_ID.", "trades": []}
-    now = time.time()
-    if not refresh and _cache["data"] and now - _cache["ts"] < CACHE_TTL:
-        return _cache["data"]
-    # Warm from the durable Postgres cache (survives restarts) before hitting Flex.
-    if not refresh:
-        db = _db_read()
-        if db and now - db[0] < CACHE_TTL:
-            _cache.update(ts=db[0], data=db[1])
-            return db[1]
+def _user_cache_read(user_id: int):
     try:
-        result = _fetch()
-    except Exception as e:              # network / parse failure
-        log.warning("Flex fetch failed", extra={"error": str(e)})
-        result = {"configured": True, "ok": False, "error": str(e), "trades": []}
-    if result.get("ok"):
-        _cache.update(ts=now, data=result)
-        _db_write(result)
-        return result
-    # Fetch failed (e.g. rate-limited) — serve the last good data (memory, then DB).
-    if _cache["data"]:
-        return _cache["data"]
-    db = _db_read()
-    if db:
-        _cache.update(ts=db[0], data=db[1])
-        return db[1]
-    return result
+        with _engine.connect() as c:
+            r = c.execute(text("SELECT extract(epoch FROM fetched_at) ts, payload "
+                               "FROM flex_cache_user WHERE user_id = :u"),
+                          {"u": user_id}).mappings().first()
+        return (float(r["ts"]), r["payload"]) if r and r["payload"] else None
+    except Exception as e:
+        log.warning("flex user cache read failed", extra={"error": str(e)})
+        return None
+
+
+def _user_cache_write(user_id: int, payload: dict) -> None:
+    try:
+        with _engine.begin() as c:
+            c.execute(text(
+                "INSERT INTO flex_cache_user (user_id, fetched_at, payload) "
+                "VALUES (:u, now(), :p) ON CONFLICT (user_id) DO UPDATE "
+                "SET fetched_at = now(), payload = EXCLUDED.payload"),
+                {"u": user_id, "p": json.dumps(payload)})
+    except Exception as e:
+        log.warning("flex user cache write failed", extra={"error": str(e)})
+
+
+def build_router(creds_dep):
+    """Built with the credentials dependency injected, so FastAPI can resolve it at
+    definition time and this module stays independent of the auth implementation."""
+    router = APIRouter(prefix="/flex", tags=["flex"])
+
+    @router.get("/status")
+    def status(creds: dict = Depends(creds_dep)) -> dict:
+        return {"configured": bool(creds.get("flex_token") and creds.get("flex_query_id"))}
+
+    @router.get("/data")
+    def data(refresh: bool = False, creds: dict = Depends(creds_dep)) -> dict:
+        token, query_id = creds.get("flex_token"), creds.get("flex_query_id")
+        uid = creds["user_id"]
+        if not (token and query_id):
+            return {"configured": False, "ok": False,
+                    "error": "Add your IBKR Flex token and query ID in Settings to see your account.",
+                    "trades": []}
+        now = time.time()
+        if not refresh:
+            cached = _user_cache_read(uid)
+            if cached and now - cached[0] < CACHE_TTL:
+                return cached[1]
+        try:
+            result = _fetch(token, query_id)
+        except Exception as e:              # network / parse failure
+            log.warning("Flex fetch failed", extra={"error": str(e), "user_id": uid})
+            result = {"configured": True, "ok": False, "error": str(e), "trades": []}
+        if result.get("ok"):
+            _user_cache_write(uid, result)
+            return result
+        # Fetch failed (rate-limited, network) — serve this user's last good statement.
+        stale = _user_cache_read(uid)
+        return stale[1] if stale else result
+
+    return router

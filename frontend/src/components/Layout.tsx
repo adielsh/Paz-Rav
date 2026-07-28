@@ -19,6 +19,7 @@ const NAV: NavItem[] = [
   { to: "/positions", key: "nav_positions", ic: "▣" },
   { to: "/trades", key: "nav_trades", ic: "≣" },
   { to: "/gates", key: "nav_gates", ic: "⚑" },
+  { to: "/settings", key: "nav_settings", ic: "⚙" },
 ];
 const DEFAULT_ROUTE: Record<Mode, string> = { real: "/real", demo: "/" };
 
@@ -26,6 +27,7 @@ const TITLE: Record<string, TKey> = {
   "/": "title_overview", "/real": "title_real", "/analytics": "title_analytics",
   "/account": "title_account", "/positions": "title_positions",
   "/trades": "title_trades", "/gates": "title_gates", "/approvals": "title_proposals",
+  "/settings": "title_settings",
 };
 
 /* Inline so the icons never depend on a symbol font being installed. */

@@ -912,3 +912,54 @@ table.legstable tbody tr.loss td:first-child { box-shadow: inset 2px 0 0 var(--l
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* ============================================================== AUTH ==== */
+.bootwait { display: grid; place-items: center; height: 100vh; color: var(--muted);
+  font-size: 1.4rem; letter-spacing: .3em; }
+
+.loginwrap { min-height: 100vh; display: grid; place-items: center; padding: 1.5rem;
+  position: relative; }
+.loginlang { position: absolute; top: 1.2rem; inset-inline-end: 1.4rem; }
+.logincard {
+  width: min(400px, 100%); background: var(--panel);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow-lg); padding: 1.6rem 1.5rem 1.4rem;
+  display: flex; flex-direction: column; gap: .75rem;
+}
+.logincard .brand { padding: 0 0 .4rem; }
+.logincard h1 { margin: 0; font-size: 1.3rem; font-weight: 750; letter-spacing: -.02em; }
+.logincard .lead { margin: 0 0 .4rem; font-size: 12.5px; color: var(--muted); line-height: 1.55; }
+.logincard label { display: flex; flex-direction: column; gap: .3rem; }
+.logincard label > span { font-size: 10.5px; font-weight: 700; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--muted);
+  display: flex; align-items: center; gap: .45rem; }
+.logincard .input { width: 100%; min-width: 0; }
+.loginbtn { justify-content: center; padding: .7rem; font-size: .95rem; margin-top: .3rem; }
+.loginswap { align-self: center; font-size: 12.5px; }
+.loginerr { background: var(--loss-soft); border: 1px solid var(--loss-line);
+  color: var(--loss); border-radius: var(--radius-sm); padding: .55rem .7rem;
+  font-size: 12.5px; font-weight: 600; }
+.setok { background: var(--profit-soft); border: 1px solid var(--profit-line);
+  color: var(--profit); border-radius: var(--radius-sm); padding: .55rem .7rem;
+  font-size: 12.5px; font-weight: 600; }
+.loginfoot { margin: .4rem 0 0; font-size: 11px; color: var(--faint); line-height: 1.6; }
+
+/* ---- settings ---- */
+.setgrid { display: flex; flex-direction: column; }
+.setrow { display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: .65rem 1.1rem; border-bottom: 1px solid var(--line-hair); }
+.setrow:last-child { border-bottom: 0; }
+.setrow .k { font-size: 11px; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--muted); }
+.setrow .v { font-size: 13px; font-weight: 600; }
+
+.setform { padding: 1.1rem; display: flex; flex-direction: column; gap: .85rem;
+  max-width: 560px; }
+.setform label { display: flex; flex-direction: column; gap: .3rem; }
+.setform label > span { font-size: 10.5px; font-weight: 700; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--muted);
+  display: flex; align-items: center; gap: .5rem; }
+.setform .input { width: 100%; }
+.setform hr { border: 0; border-top: 1px solid var(--line); margin: .4rem 0; width: 100%; }
+.setlead { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.65; }
+.setwarn { color: var(--amber); font-weight: 600; }
