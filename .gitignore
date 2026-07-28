@@ -1,0 +1,41 @@
+# ---- secrets: never commit ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# ---- IBKR gateway state (contains login / session material) ----
+ibgw-settings/
+tws-settings/
+Jts/
+
+# ---- python ----
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# ---- node / frontend ----
+node_modules/
+dist/
+*.tsbuildinfo
+.vite/
+
+# ---- logs & local data ----
+*.log
+logs/
+*.sqlite
+*.db
+pgdata/
+
+# ---- editor / OS / agent scratch ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.claude/settings.local.json
