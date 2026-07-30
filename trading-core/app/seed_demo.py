@@ -28,11 +28,14 @@ def _regime():
 def run() -> None:
     S = db.init_db()
     with S() as s:
-        # wipe prior demo rows
-        s.query(db.Pnl).delete()
-        s.query(db.Fill).delete()
-        s.query(db.GateDecision).delete()
-        s.query(db.Trade).delete()
+        # Wipe prior demo rows only — real trades/gates (is_demo=False) are never touched by
+        # this script, even if it's re-run against a DB the live daemon is also using.
+        demo_trade_ids = [t.id for t in s.query(db.Trade.id).filter_by(is_demo=True)]
+        if demo_trade_ids:
+            s.query(db.Pnl).filter(db.Pnl.trade_id.in_(demo_trade_ids)).delete(synchronize_session=False)
+            s.query(db.Fill).filter(db.Fill.trade_id.in_(demo_trade_ids)).delete(synchronize_session=False)
+        s.query(db.Trade).filter_by(is_demo=True).delete(synchronize_session=False)
+        s.query(db.GateDecision).filter_by(is_demo=True).delete(synchronize_session=False)
         s.commit()
 
     spot = 5300.0
@@ -64,6 +67,7 @@ def run() -> None:
                 dte=dte0, vix_avg=vix, put_short_strike=ps, put_long_strike=pl,
                 call_short_strike=cs, call_long_strike=cl, target_put_delta=pd_, target_call_delta=cd_,
                 entry_credit=credit, quantity=1, status=status, leg_conids=[i * 4 + k for k in range(4)],
+                is_demo=True,
             )
             s.add(t); s.flush()
             s.add(db.Fill(trade_id=t.id, kind="entry", price=credit, quantity=1, ts=opened))
@@ -82,6 +86,7 @@ def run() -> None:
                 call_short_strike=cs, call_long_strike=cs + 50, target_put_delta=pd_, target_call_delta=cd_,
                 entry_credit=round(random.uniform(1.25, 1.6), 2), quantity=1, status="open",
                 leg_conids=[9000 + j * 4 + k for k in range(4)],
+                is_demo=True,
             )
             s.add(t); s.flush()
             s.add(db.Fill(trade_id=t.id, kind="entry", price=t.entry_credit, quantity=1, ts=opened))
@@ -100,13 +105,15 @@ def run() -> None:
             acc, reason = random.choice(reasons)
             vix = round(random.uniform(11, 26), 1)
             s.add(db.GateDecision(created_at=when, vix=vix, accepted=acc, reason=reason,
-                                  details={"vix": vix, "credit_mid": round(random.uniform(1.0, 1.7), 2)}))
+                                  details={"vix": vix, "credit_mid": round(random.uniform(1.0, 1.7), 2)},
+                                  is_demo=True))
         s.commit()
 
     with S() as s:
-        print("trades:", s.query(db.Trade).count(),
-              "pnl:", s.query(db.Pnl).count(),
-              "gates:", s.query(db.GateDecision).count())
+        demo_ids = [t.id for t in s.query(db.Trade.id).filter_by(is_demo=True)]
+        print("demo trades:", len(demo_ids),
+              "demo pnl:", s.query(db.Pnl).filter(db.Pnl.trade_id.in_(demo_ids)).count(),
+              "demo gates:", s.query(db.GateDecision).filter_by(is_demo=True).count())
 
 
 if __name__ == "__main__":

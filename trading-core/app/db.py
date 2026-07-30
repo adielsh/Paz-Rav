@@ -44,6 +44,9 @@ class Trade(Base):
     ib_perm_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     leg_conids: Mapped[list | None] = mapped_column(JSON, nullable=True)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # True only for rows written by seed_demo.py. The daemon must never treat these as real
+    # positions (no GTC reattach, no gamma stop) — see state_recovery()/gamma_scan() in main.py.
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False)
 
     fills: Mapped[list["Fill"]] = relationship(back_populates="trade", cascade="all, delete-orphan")
 
@@ -70,6 +73,7 @@ class GateDecision(Base):
     accepted: Mapped[bool] = mapped_column(Boolean)
     reason: Mapped[str] = mapped_column(String(255))
     details: Mapped[dict | None] = mapped_column(JSON, nullable=True)   # per-gate values
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class Pnl(Base):

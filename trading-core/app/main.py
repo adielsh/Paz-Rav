@@ -39,9 +39,11 @@ MAX_ENTRY_ATTEMPTS = int(os.getenv("MAX_ENTRY_ATTEMPTS", "20"))
 
 
 def _open_trades(session_factory) -> list:
+    """Live open condors only — demo/seed rows are never real positions (see db.Trade.is_demo)."""
     from sqlalchemy import select
     with session_factory() as s:
-        return s.execute(select(db.Trade).where(db.Trade.status == "open")).scalars().all()
+        return s.execute(select(db.Trade).where(
+            db.Trade.status == "open", db.Trade.is_demo.is_(False))).scalars().all()
 
 
 async def state_recovery(ib: IB, acct: str, session_factory) -> None:

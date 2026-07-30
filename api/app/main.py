@@ -94,8 +94,11 @@ def health() -> dict:
 
 @app.get("/positions")
 def positions(_: int = Depends(USER_ID)) -> list[dict]:
-    """Open condors (durable view from the DB; IBKR remains the settlement source of truth)."""
-    return _rows("SELECT * FROM trades WHERE status = 'open' ORDER BY created_at DESC")
+    """Open condors (durable view from the DB; IBKR remains the settlement source of truth).
+
+    Excludes seed_demo.py rows (is_demo=true) — those aren't real positions."""
+    return _rows(
+        "SELECT * FROM trades WHERE status = 'open' AND is_demo IS NOT TRUE ORDER BY created_at DESC")
 
 
 @app.get("/trades")
