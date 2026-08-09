@@ -289,3 +289,9 @@ Details, what's proven vs. what's a known gap, and backtest results:
   actually works.
 - [**`CLAUDE.md`**](CLAUDE.md) — commands and architecture notes for AI coding agents
   working in this repo.
+
+## Disclaimer
+
+This project is provided as is, without warranty of any kind, and is **not investment advice**.
+It was built for my own research and use. Options trading carries substantial risk of loss - you
+are solely responsible for anything this software does with your account. Use at your own risk.
