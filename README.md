@@ -1,291 +1,75 @@
-# Paz Rav — Real-Time Options Strategy Engine
+# Paz Rav
 
-> Finds the **right options strategy, at the right time, for the right duration** — and
-> proves the edge in backtest before a dollar is risked. Deterministic Python does all
-> the math; a lean AI layer adds judgment, a **genuine three-model debate on when to
-> close**, and a full audit trail. Nothing on screen is guessed.
+**Finds options trades where the odds are on your side — and shows its work.**
 
-## What it does
+Paz Rav watches a handful of stocks and indexes, builds every sensible **Iron Condor** and
+**DACS** position it can from the live option chain, ranks them, and puts the best ones on a
+dashboard. You place the trade at your own broker. The system then tracks it, raises a flag
+when its exit rules fire, and — when you ask — has three AI models argue about whether now
+is the moment to close.
 
-Scans a fixed universe of underlyings, ranks **Iron Condor** and **DACS 1.0** candidates
-deterministically, runs each past an AI committee (Analyst proposes, Critic argues
-against), and serves a live dashboard where you open paper positions. When you ask
-**"when should I close this?"**, three real language models debate it — an Analyst, a
-Critic who argues the opposite, and a Decider who weighs both — over numbers Python has
-already computed.
-
-**The one rule that matters:** every greek, IV, price, POP, and P&L comes from
-deterministic Python — the AI only ever reasons over numbers already computed, never
-invents one. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for why.
-
-## System at a glance
-
-```mermaid
-flowchart LR
-    subgraph Data["Market data"]
-        FEED["yfinance / IBKR"]
-    end
-    subgraph Engine["Deterministic engine (Python)"]
-        ANALYTICS["analytics<br/>greeks · IV rank · regime"]
-        BUILDER["builder<br/>score Iron Condor / DACS"]
-        POSITIONS["positions<br/>exit rules"]
-    end
-    subgraph AI["AI committee"]
-        ANALYST["Analyst"]
-        CRITIC["Critic"]
-        EXPLAINER["Explainer<br/>(Claude)"]
-    end
-    subgraph CLOSE["advisor-service · own container"]
-        CA["Close-timing debate<br/>Analyst → Critic → Decider<br/>3 LLMs on LangGraph"]
-    end
-    REFLECT["Reflection agent<br/>reviews all closed trades<br/>→ tuning advice"]
-    subgraph Store["Storage"]
-        REDIS[("Redis<br/>hot state")]
-        PG[("Postgres + pgvector<br/>candidates · positions · case memory")]
-    end
-    LF["Langfuse<br/>traces + scoring"]
-    subgraph Serve["Serve"]
-        API["FastAPI + WebSocket"]
-        WEB["React dashboard"]
-    end
-
-    FEED --> ANALYTICS --> BUILDER --> ANALYST
-    ANALYST <--> CRITIC
-    ANALYST --> EXPLAINER
-    ANALYTICS --> REDIS
-    BUILDER --> PG
-    POSITIONS --> PG
-    POSITIONS --> CA
-    PG -.recall similar closed trades.-> CA
-    PG --> REFLECT
-    REFLECT -.-> LF
-    ANALYST -.-> LF
-    CRITIC -.-> LF
-    POSITIONS -.-> LF
-    CA -.-> LF
-    REDIS --> API
-    PG --> API
-    API <--> WEB
-
-    classDef llm fill:#efeaff,stroke:#7c4dff,color:#231a4d;
-    class CA,REFLECT llm;
-    style CLOSE fill:#f7f4ff,stroke:#7c4dff;
-```
-
-## How a trade flows through the system
-
-```mermaid
-flowchart TD
-    A(["Scheduler tick"]) --> B["Fetch chain + compute features"]
-    B --> C["Build & score candidates"]
-    C --> D["Ranked shortlist on the dashboard"]
-    D --> E{"User opens<br/>a candidate?"}
-    E -- no --> A
-    E -- yes --> F["Analyst proposes a verdict"]
-    F --> G["Critic argues against it"]
-    G --> H{"Objection<br/>severe?"}
-    H -- yes --> F
-    H -- no --> I["Verdict + rationale shown"]
-    I --> J{"User opens<br/>the position?"}
-    J -- no --> A
-    J -- yes --> K["Position opened<br/>Langfuse trace saved"]
-    K --> L["Exit Manager checks rules<br/>every scan"]
-    L --> M{"Exit condition<br/>met?"}
-    M -- no --> L
-    M -- yes --> N["Position flagged<br/>(never auto-closed)"]
-    N --> O["User closes manually<br/>at the real fill price"]
-    O --> P["Realized P&L scored<br/>back onto the trace"]
-    P --> A
-```
-
-## "When should I close?" — a real three-model debate
-
-This is the one place a language model is trusted to *reason toward a decision*, not just
-phrase one. Think of it like **asking three advisors before selling a house** 🏠:
-
-- 🟢 the **Analyst** says what he'd do,
-- 🔴 the **Critic** deliberately argues the *opposite*, so nothing is missed,
-- ⚖️ the **Decider** listens to both and calls it — and if he's *not sure*, he sends it
-  back to the Analyst to think again, once.
-
-Crucially, **the three only ever argue over numbers Python already computed** (profit so
-far, days left, distance to the stop, volatility, recent price move) — they never invent a
-number. **LangGraph** runs the loop; **Langfuse** remembers every debate.
-
-```mermaid
-flowchart TB
-    BTN(["🔘 You click<br/>'When should I close?'"])
-    NUMS["📐 Python computes the numbers<br/>P&L · days left · distance to stop · IV · trend"]
-
-    subgraph DEBATE["🧠 LangGraph — three real language models argue"]
-        direction TB
-        A["🟢 Analyst<br/>'here's what I'd do'"]
-        C["🔴 Critic<br/>argues the opposite — on purpose"]
-        D{"⚖️ Decider<br/>weighs both sides"}
-        A --> C --> D
-        D -.->|rethink once if unsure| A
-    end
-
-    OUT["💬 Hold · Close · Reduce<br/>+ a plain-language reason"]
-    LF["📊 Langfuse<br/>remembers the whole debate"]
-
-    BTN --> NUMS --> A
-    D -->|confident| OUT
-    D -.-> LF
-
-    classDef start fill:#fff3d6,stroke:#e0a020,color:#5a3d00;
-    classDef code fill:#e7f0fe,stroke:#2e7df6,color:#123;
-    classDef analyst fill:#e2f5ee,stroke:#12a37f,color:#0a3;
-    classDef critic fill:#fde7e6,stroke:#e0554d,color:#5a1512;
-    classDef decider fill:#efeaff,stroke:#7c4dff,color:#231a4d;
-    classDef out fill:#e2f5ee,stroke:#12a37f,color:#093;
-    classDef ops fill:#f0ebff,stroke:#7c4dff,color:#212;
-    class BTN start;
-    class NUMS code;
-    class A analyst;
-    class C critic;
-    class D decider;
-    class OUT out;
-    class LF ops;
-```
-
-**Advisory only** — like the rest of the system, it never closes anything itself; the real
-fill happens at your broker. Repeated dashboard refreshes are served from a cache keyed on
-the market state, so the debate only re-runs when something material changes (or you click
-"check now").
-
-## One room moved to its own house 🏠➡️🏠
-
-The whole app is **one house with many rooms** (a *modular monolith*) — simple to run, no
-running between buildings. But the "when should I close?" debate is **slow and expensive**
-(three LLM calls), so it earned its own house next door: the **advisor-service**, a separate
-container. The main house sends it the already-computed numbers and gets back the verdict.
-
-```mermaid
-flowchart LR
-    subgraph APP["🏠 main app (monolith)"]
-        NUMS["📐 compute the numbers<br/>(Situation)"]
-    end
-    subgraph ADV["🏠 advisor-service · own container"]
-        DEBATE["🧠 Analyst → Critic → Decider<br/>3 LLMs on LangGraph"]
-    end
-    FB["🛟 fallback:<br/>run the debate at home<br/>if the advisor is down"]
-    NUMS -->|POST /advise| DEBATE
-    DEBATE -->|hold / close / reduce| NUMS
-    NUMS -.->|advisor unreachable| FB
-
-    classDef house fill:#e7f0fe,stroke:#2e7df6,color:#123;
-    classDef llm fill:#efeaff,stroke:#7c4dff,color:#231a4d;
-    classDef fb fill:#e2f5ee,stroke:#12a37f,color:#093;
-    class NUMS house;
-    class DEBATE llm;
-    class FB fb;
-```
-
-Why this is the *right* room to move out: it was already a **pure function** of the numbers
-(no database, no state), so the wall between the houses was easy to draw. And it's **loosely
-coupled** — if the advisor house is closed, the main house just does the debate itself (a
-built-in fallback). Flip one setting (`ADVISOR_URL`) and it runs in-process again — moving
-out is a *config change, not a rewrite*, which is the whole point of building to strict
-module boundaries.
-
-## Learning from its own trades 🧠📚
-
-Every time you close a position, the system writes it into a **memory book** 📓: "a trade
-that looked like *this* ended up *this* way." Later, when the three advisors debate a new
-position, they first **flip through the book for the most similar past trades** and see how
-those turned out — so the decision leans on your real history, not just the current moment.
-
-```mermaid
-flowchart LR
-    CLOSE(["✅ You close a position"]) --> STORE["📓 Save it to the memory book<br/>(numbers + what actually happened)"]
-    STORE --> DB[("🗄️ pgvector<br/>similarity search")]
-
-    NEW(["🔘 New position — 'when should I close?'"]) --> LOOK["🔎 Find the most similar<br/>past trades"]
-    DB --> LOOK
-    LOOK --> DEBATE["🧠 The 3 advisors debate,<br/>now knowing how similar<br/>trades ended"]
-
-    classDef start fill:#fff3d6,stroke:#e0a020,color:#5a3d00;
-    classDef code fill:#e7f0fe,stroke:#2e7df6,color:#123;
-    classDef store fill:#e2f5ee,stroke:#12a37f,color:#093;
-    classDef llm fill:#efeaff,stroke:#7c4dff,color:#231a4d;
-    class CLOSE,NEW start;
-    class STORE,LOOK code;
-    class DB store;
-    class DEBATE llm;
-```
-
-The clever, honest part: a trade's "fingerprint" in the book is **not** something a language
-model made up — it's built directly from the numbers Python already computed (how much
-profit, days left, distance to the danger line, volatility, trend). Two trades that *felt*
-the same really are close together in the book. The models still only ever reason over real
-numbers — now including how past trades ended. It's honest about its limits too: with an
-empty book, the debate just runs without memory, and it fills up as you trade.
-
-## The coach who reviews the whole season 🏅
-
-Everything above decides about *one* trade. The **reflection agent** is different: like a
-coach watching game film after the season, it looks back over **all** your closed trades and
-asks *"what's working, and what should we change?"* — then suggests tuning (advisory only, it
-never changes settings itself).
-
-```mermaid
-flowchart LR
-    HIST[("🗄️ all closed trades")] --> STATS["📐 Python counts the score<br/>win rate · avg P&L · per strategy"]
-    STATS --> COACH["🧑‍🏫 the coach (LLM)<br/>reads the scoreboard,<br/>spots patterns"]
-    PAST["📓 its own past reviews"] --> COACH
-    COACH --> OUT["💡 'DACS keeps losing in low RSI —<br/>consider tightening entry'<br/>(advice, not auto-applied)"]
-    COACH --> PAST
-
-    classDef store fill:#e2f5ee,stroke:#12a37f,color:#093;
-    classDef code fill:#e7f0fe,stroke:#2e7df6,color:#123;
-    classDef llm fill:#efeaff,stroke:#7c4dff,color:#231a4d;
-    classDef out fill:#fff3d6,stroke:#e0a020,color:#5a3d00;
-    class HIST,PAST store;
-    class STATS code;
-    class COACH llm;
-    class OUT out;
-```
-
-Why it scales to thousands of trades: the coach **never reads the raw game film** — Python
-hands it a compact scoreboard (the same size whether you've made 10 trades or 10,000) plus a
-short window of its own recent reviews. And it's honest — under a minimum number of trades it
-says *"not enough data yet"* instead of inventing patterns from noise.
-
-## Quick start
+**The one rule the whole project is built on:** every number on screen — greeks, IV,
+probability of profit, P&L — is computed by plain Python. The AI never invents a figure. It
+only reasons *about* numbers that were already computed. That's the difference between a
+tool you can audit and a chatbot wearing a stock ticker.
 
 ```bash
-docker compose up -d --build
-# → open http://localhost:8000
+docker compose up -d --build   # → http://localhost:8000
 ```
 
-One command, the whole stack (Postgres + Redis + the engine + dashboard). Runs on
-offline demo data by default; set `PAZ_DATA=yfinance` for live delayed quotes. Full
-options (running from source, real persistence, cloud deployment) are in
-[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+That's Postgres, Redis, the engine and the dashboard, on offline demo data. Set
+`PAZ_DATA=yfinance` first for live delayed quotes.
 
-## Status
+## What happens on every tick
 
-| Phase | What | State |
-|---|---|---|
-| 1 | Deterministic core + live dashboard | ✅ done |
-| 2 | Two-agent AI judgment (Analyst + Critic, LangGraph, Langfuse) | ✅ done |
-| 3 | Position lifecycle + advisory exit alerts | ✅ done |
-| 3.5 | **Close-timing debate — 3 real LLMs (Analyst/Critic/Decider) on LangGraph**, extracted as its own `advisor` microservice, with **pgvector case memory** (recall similar closed trades) | ✅ done |
-| 3.6 | **Strategic reflection agent** — looks back over all closed trades, recommends tuning (advisory) | ✅ done |
-| 4 | Real broker connection, hardening | ⏳ not started |
+```mermaid
+flowchart LR
+    FEED["Option chain<br/>yfinance / IBKR"] --> ANALYTICS["Compute<br/>greeks · IV rank · regime"]
+    ANALYTICS --> BUILDER["Build & score<br/>Iron Condor · DACS"]
+    BUILDER --> RANK["Ranked shortlist<br/>on the dashboard"]
+    RANK --> OPEN["You open one<br/>(at your broker)"]
+    OPEN --> WATCH["Exit rules watch it<br/>— flag only, never auto-close"]
+    WATCH --> CLOSE["You close it<br/>at the real fill price"]
 
-Details, what's proven vs. what's a known gap, and backtest results:
-[`docs/ROADMAP.md`](docs/ROADMAP.md).
+    classDef py fill:#e7f0fe,stroke:#2e7df6,color:#123;
+    classDef you fill:#fff3d6,stroke:#e0a020,color:#5a3d00;
+    class ANALYTICS,BUILDER,WATCH py;
+    class OPEN,CLOSE you;
+```
+
+One function — `Pipeline.run_once()` — does all of it. The scheduler calls it on a timer;
+the backtester replays history through the *same* function. That's what makes backtest and
+live results comparable instead of two codebases that drift apart.
+
+## Where the AI is actually allowed to think
+
+Most of the "AI" here isn't AI at all, on purpose. The always-on filter that vets every
+candidate (Analyst proposes, Critic argues back) is deterministic rule code — free, instant,
+testable. The plain-language explanation of each position is a fixed template, because a
+small model writing prose *containing numbers* will eventually get one slightly wrong.
+
+Language models get exactly two jobs, both on demand and both advisory:
+
+- **"Should I open this?" / "Should I close this?"** — three Claude calls debate it: an
+  Analyst, a Critic who argues the opposite on purpose, and a Decider who weighs both. They
+  only ever see numbers Python already computed, and structured tool-use means they can't
+  return free-form prose or a made-up figure.
+- **"How am I doing overall?"** — a reflection pass reads the aggregate stats of your closed
+  trades and suggests what to tune. It never tunes anything itself.
+
+Nothing here ever places or closes an order. Every fill is yours, at your broker.
+
+## Status — the honest version
+
+| | |
+|---|---|
+| ✅ Works today | Quant core, candidate ranking, live dashboard, position tracking, exit alerts, the AI debates, Postgres/Redis persistence. 106 tests, no infra or network needed. |
+| ⚠️ Proven only in simulation | The Iron Condor backtest wins 92.5% — but on synthetic chains deliberately priced above realized vol, so it largely confirms its own premise. Not yet validated on real historical chains. |
+| ❌ Known gaps | DACS is negative in backtest (it's held passively to expiry, which isn't how it's meant to be traded). No real broker connection. Nothing deployed to cloud. |
 
 ## Learn more
 
-- [**`docs/ARCHITECTURE.md`**](docs/ARCHITECTURE.md) — the reasoning behind the diagrams
-  above: why two agents (not zero, not seven), why a modular monolith, the tech stack,
-  repo layout.
-- [**`docs/DEPLOYMENT.md`**](docs/DEPLOYMENT.md) — running it (Docker or from source),
-  real persistence, cloud deployment stages.
-- [**`docs/ROADMAP.md`**](docs/ROADMAP.md) — phase-by-phase status and how we verify it
-  actually works.
-- [**`CLAUDE.md`**](CLAUDE.md) — commands and architecture notes for AI coding agents
-  working in this repo.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — how it's put together and why.
+- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — running it, for real and for development.
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) — what's done, what's next, what we actually know.
+- [`CLAUDE.md`](CLAUDE.md) — day-to-day notes for AI coding agents in this repo.

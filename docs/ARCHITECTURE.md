@@ -1,227 +1,192 @@
 # Architecture
 
-See the [system diagram and flow chart in the README](../README.md#system-at-a-glance)
-for the visual overview — this page is the reasoning behind them.
+How Paz Rav is put together, and — more usefully — *why*. If you only read one section, read
+the next one.
 
-## The pipeline
+## The line down the middle
 
-`Pipeline.run_once()` (`src/paz_rav/pipeline.py`) is the one function that does
-everything the diagrams show — the scheduler drives it on a loop live, and the
-backtester replays history through the *same* function, which is what guarantees
-live/backtest parity:
+There is exactly one architectural rule here, and everything else follows from it:
 
-1. **Deterministic engine (no AI).** Ingest a chain, compute features (greeks, IV rank,
-   regime, RSI), enumerate and score Iron Condor + DACS candidates.
-2. **Two-agent judgment (AI).** Analyst proposes a verdict (take / caution / pass);
-   Critic argues the bear case. A severe objection sends a "take" back to the Analyst
-   for one revision — a real LangGraph loop, not two sequential calls.
-3. **Positions + learning loop.** Opening a position captures the committee's Langfuse
-   trace id. The Exit Manager never closes a position — it only flags it, since the real
-   fill happens at your broker. Confirming the close with the real price scores the
-   realized P&L back onto that trace.
+> **Python computes. The AI reasons over what Python computed. Never the other way round.**
 
-## Why a modular monolith, not microservices
+Greeks, implied vol, probability of profit, scores, P&L — all of it comes out of `quant/`,
+`analytics/`, `strategies/`, `backtest/`. Pure functions, with tests. A language model handed
+*"P&L is 48% of max, 9 days left, spot is drifting toward your short strike"* can say
+something genuinely useful about it. A language model asked to *compute* that P&L will, some
+day, be confidently wrong — and you won't know which day. So it never gets the chance.
 
-Ships as **one process**, deliberately — for a solo project, running 7 containers is
-pure ops cost with no benefit.
+Everything below exists to keep that line clean.
 
-- **Modules are strict** (`adapters`, `analytics`, `strategies`, `builder`, `agents`,
-  `positions`, `store`, `api`) — clean boundaries, so extraction later is cheap.
-- **Deployment isn't split.** Modules call each other in-process; the same boundaries
-  become network calls only if a module is actually extracted.
-- The **scheduler** is an in-process timer and the **backtester** a run mode — neither is
-  an always-on server, despite looking like one in the diagram.
+## One pipeline, two callers
 
-**Extract only on a real trigger:**
+`Pipeline.run_once()` (`src/paz_rav/pipeline.py`) is the whole engine in one function:
 
-| Extract | Trigger | Status |
+```
+chain → analytics.analyze()  → FeatureStore + IVHistory
+      → builder.build()      → CandidateRepository
+      → exit_manager.sweep() → flags open positions (never closes them)
+```
+
+The scheduler calls it on a timer. The backtester replays history through it. Same code both
+times — which is the only reason backtest results say anything at all about live behaviour.
+Two separate implementations would drift apart within a month and nobody would notice.
+
+## Why one process, not seven
+
+It ships as a **modular monolith**: strict module boundaries (`adapters`, `analytics`,
+`strategies`, `builder`, `agents`, `positions`, `store`, `api`), one deployable. For a solo
+project, seven containers buy you nothing but seven things to restart.
+
+The boundaries are real, though, so extraction is cheap when there's a reason. The rule:
+**extract only on a trigger you've actually hit.**
+
+| Candidate for extraction | The trigger | Status |
 |---|---|---|
-| **Advisor (close-timing debate)** | Slow, LLM-bound; scales differently from the tick loop | ✅ **extracted** — `services/advisor`, own container |
-| Real-time engine (feed + analytics) | Must never drop a tick / be disturbed by a UI restart or slow AI call | in-process |
-| API / web server | Want to redeploy the dashboard without touching the trading engine | in-process |
+| Advisor (close-timing debate) | Slow and LLM-bound — scales differently from the tick loop | extracted |
+| Real-time engine (feed + analytics) | Must never drop a tick because the UI restarted | in-process |
+| API / web server | Redeploy the dashboard without touching the engine | in-process |
 
-At most three deployables, only when the pain is real.
+Ceiling: three deployables, and only when it hurts.
 
-### The one service actually extracted: `advisor`
+### The one that did get extracted
 
-The close-timing debate is the first (and, for now, only) module pulled out to its own
-deployable — because it hit a real trigger: it's slow and LLM-bound, so it scales
-differently from everything else, and the cut is *clean* because it was already a pure
-function of a deterministic `Situation` the monolith computes. It holds no state and
-touches no database.
+The close-timing debate lives in `services/advisor` as its own container — same image,
+different entrypoint (`:8001`), one endpoint (`POST /advise` → the verdict). It earned that:
+slow, LLM-bound, and already a pure function of a `Situation` the monolith computes, so the
+cut was clean — no state, no database.
 
-- **Same image, different entrypoint** — `uvicorn paz_rav.services.advisor.app:app` on
-  port 8001; a separate `advisor` service in `docker-compose.yml`.
-- **Contract** — `POST /advise {"situation": {...}}` → the debate result. That's the
-  whole API surface.
-- **Loosely coupled, never a hard dependency** — the monolith calls it over HTTP only
-  when `ADVISOR_URL` is set, and `agents/close_advisor._resolve_debate()` is a small
-  circuit breaker: remote → (on any failure) in-process LLM debate → deterministic
-  fallback. A down advisor never takes the dashboard with it. Leave `ADVISOR_URL` empty
-  and the exact same debate runs in-process — extraction is a config flip, not a rewrite,
-  which is the whole point of the modular-monolith boundaries.
+It's never a hard dependency. `close_advisor._resolve_debate()` is a small circuit breaker —
+remote → in-process LLM debate → deterministic fallback — so a dead advisor doesn't take the
+dashboard with it, and clearing `ADVISOR_URL` runs the identical debate in-process. That's the
+real payoff of module boundaries: moving a room out of the house was a config flip, not a
+rewrite.
 
-## Why exactly two agents
+## Why two agents, not zero and not seven
 
-- **Not zero** — a pure rule engine can't weigh conflicting contextual signals ("IV rank
-  borderline, but FOMC in 3 days"). That synthesis plus a written rationale is real
-  value.
-- **Not one** — a model that proposes *and* critiques itself in one breath is
-  overconfident. Splitting proposal from critique catches more bad trades.
-- **Not more** — extra agents (Regime, Risk, PM) add cost for judgment deterministic
-  rules already cover; they'd only earn their place managing a correlated portfolio or
-  selling signals.
+The always-on filter is **deterministic**: `agents/analyst.py` proposes a verdict
+(take / caution / pass), `agents/critic.py` argues the bear case. No LLM call — so it runs on
+every candidate on every scan for free, and it can be backtested. `agents/graph.py` wraps the
+pair in a real LangGraph loop (a severe objection sends a "take" back to the Analyst for one
+revision), falling back to a sequential pass in `committee.py` when LangGraph isn't installed.
 
-**LangGraph** manages exactly the Analyst↔Critic loop — nothing else from LangChain is
-used. **Langfuse** traces every decision and lets you score the realized outcome back
-onto it — the difference between a bot that picks trades and a system that learns which
-of its own judgments were good.
+- **Not zero agents** — weighing conflicting context ("IV rank borderline, but FOMC in three
+  days") is exactly what fixed rules are bad at.
+- **Not one** — a model that proposes and critiques itself in the same breath just agrees
+  with itself at greater length.
+- **Not seven** — Regime/Risk/PM agents would re-decide what deterministic rules already
+  cover, at real cost. They'd earn their place managing a correlated portfolio.
 
-## The close-timing debate — where a real LLM finally decides
+`agents/explainer.py` is a fixed template, not a model. It used to be Haiku, but prose
+*containing numbers* is precisely where a small model can quietly break the rule at the top
+of this page.
 
-The opening Analyst/Critic are deterministic rule code (no LLM) — cheap to test and
-backtest. The **close-timing advisor** (`agents/close_advisor.py`) is different, and
-deliberately so: it's the one place a language model is trusted to *reason toward a
-decision*, because "should I close now?" weighs genuinely conflicting, contextual signals
-("48% of max profit, but 9 DTE and spot drifting toward the short") that a single fixed
-rule can't.
+## The close-timing debate — where a model finally decides
 
-When the user asks, **three real Claude calls** run as a LangGraph graph:
+"Should I close now?" is genuinely hard: 48% of max profit is good, 9 DTE with spot drifting
+toward your short strike is not, and no single fixed rule weighs those against each other
+well. So this is the one place a language model reasons *toward a decision*.
+
+Three real Claude calls, run as a LangGraph graph:
 
 ```
-analyst → critic → decider → (if the Decider's confidence < 0.5 and we haven't
-                              revised yet: loop back to the Analyst with the Critic's
-                              objection, once) → done
+analyst → critic → decider → (confidence < 0.5 and not yet revised?
+                              back to the analyst with the objection, once) → done
 ```
 
-- **Analyst** — reads the situation, argues hold vs. close.
-- **Critic** — the *איפכא מסתברא*: argues the opposite of the Analyst, to surface the
-  overlooked risk (or opportunity).
-- **Decider** — weighs both, returns `hold | close | reduce` + confidence + rationale.
+The Critic's job is *איפכא מסתברא* — argue the opposite of whatever the Analyst said, so the
+overlooked risk surfaces. The Decider returns `hold | close | reduce` plus a confidence. This
+is where LangGraph actually earns its keep: language-model nodes, a branching graph, a real
+conditional loop. A single agent wouldn't need a framework.
 
-This is where **LangGraph genuinely earns its place** — it orchestrates *language-model*
-nodes (not rule nodes) through a branching graph with a real conditional loop; a single
-agent wouldn't need one. The debate degrades to a plain sequential pass if `langgraph`
-isn't installed, and to a deterministic rule-based "debate" if there's no
-`ANTHROPIC_API_KEY` — so the dashboard always answers and the tests stay offline.
+Two things keep it honest. **Every number is pre-computed** — `build_situation()` gathers
+mark-to-market P&L, DTE, distance-to-stop, IV rank, regime and recent move, and forced
+tool-use (structured JSON) means a model *cannot* return free-form prose or a figure of its
+own, only a stance plus reasons citing what it was handed. And it's **advisory only**: it
+never closes anything, and a cache keyed on a coarse market-state signature means refreshing
+the dashboard is free — the debate re-runs only when something material moved, or when you
+click "check now".
 
-Two invariants keep it honest:
+`agents/open_advisor.py` is the same machinery pointed at *entry* instead of exit. Both
+degrade all the way down: no `langgraph` → sequential pass; no `ANTHROPIC_API_KEY` →
+deterministic rule-based "debate". The dashboard always answers, and tests stay offline.
 
-1. **Every number is pre-computed in Python** (`build_situation()` gathers mark-to-market
-   P&L, DTE, distance-to-stop, IV rank, regime, recent move). The models only weigh
-   numbers; **forced tool-use** (structured JSON output) means a model literally cannot
-   return free-form prose or a made-up figure — only a stance + reasons that cite the
-   given numbers.
-2. **Advisory only**, like the Exit Manager — it never closes anything; the real fill is
-   at the broker. Cost is bounded by a cache keyed on a coarse market-state signature, so
-   ordinary dashboard refreshes are instant and only a material change (or an explicit
-   "check now") re-runs the debate. Each debate is traced to Langfuse on the position's
-   original opening trace.
+## Two features waiting for data
 
-## Case memory — learning from your own closed trades
+Both of these are finished, tested code that does approximately nothing until you've closed a
+few dozen real trades. Worth knowing before you go looking for their value.
 
-The debate gets better with history via **case memory** (`store/case_memory.py`,
-pgvector-backed in `store/postgres_case_memory.py`). Every closed position is stored as a
-`(vector, real outcome)` pair; when the debate runs on an open position, it recalls the
-*k* most similar closed trades and hands their outcomes to the models as grounded context
-("trades that reached a state like this one ended 4/5 in profit").
-
-The deliberate design choice: **a case's vector is a deterministic feature vector, not an
-LLM text embedding.** `vectorize()` builds it straight from the numbers the quant core
+**Case memory** (`store/case_memory.py`) stores every closed position as a
+`(vector, real outcome)` pair, so the debate can recall how similar trades ended: "trades that
+reached a state like this one ended 4 out of 5 in profit." The choice worth noticing is that
+**the vector isn't an LLM embedding** — `vectorize()` builds it from numbers the quant core
 already computed (normalized DTE, P&L %, distance-to-stop, IV rank, RSI, recent move, plus
-strategy/regime one-hots). Similar market states sit close in that space; retrieval is
-plain cosine similarity (pgvector's `<=>`). This keeps the deterministic line intact — the
-"embedding" is just the computed numbers, so it's fully reproducible and testable offline
-with no embedding API, and the models still only ever reason over computed figures, now
-including past outcomes.
+strategy and regime one-hots), and retrieval is plain cosine similarity over pgvector. So the
+"embedding" is just the computed numbers: reproducible, testable offline, no embedding API,
+and the line at the top of this page holds. No pgvector → in-memory scan; no cases yet → the
+debate runs without recall.
 
-It degrades gracefully at every layer: no pgvector extension → falls back to an in-memory
-cosine scan; no closed cases yet → the debate simply runs without recall. Honest by
-design: case memory only helps once there's a real body of outcomes to retrieve against.
+**Reflection** (`agents/reflection.py`) steps back over the *whole* closed-trade history and
+suggests what to tune — advisory, never self-tuning. `aggregate_stats()` computes every
+statistic in Python; the model only interprets. It never sees raw rows, only fixed-size
+aggregates plus a window of recent reflections, so it costs the same at 10 closed trades or
+10,000 — and below `MIN_SAMPLE` it says "not enough data yet" instead of finding patterns in
+noise.
 
-## Strategic reflection — the system analyzing itself
+Each reflection is *stored* in Postgres (the product reads it back — the filing cabinet) and
+the *run* is *traced* to Langfuse (the security camera). You don't retrieve business documents
+from CCTV footage.
 
-Every other AI touchpoint reasons about *one position, now*. The reflection agent
-(`agents/reflection.py`) steps back over the *whole* history and asks: what is the system
-doing well, and what should be tuned? It reads the accumulated closed trades, finds
-patterns, and recommends parameter adjustments — **advisory only, never self-tuning**.
+## Storage, swapped behind Protocols
 
-Same spine as everything else:
+`store/base.py` and `positions/base.py` define `Protocol`s: `FeatureStore`, `IVHistoryStore`,
+`CandidateRepository`, `PositionRepository`. Each has an in-memory implementation (the
+default, and what tests use) and a real one behind `PAZ_PERSIST=redis_postgres` — features, IV
+history and the bus move to Redis; candidates and positions to Postgres.
 
-- **Deterministic aggregation first.** `aggregate_stats()` computes every statistic in
-  Python — win rate / avg P&L per strategy, close-reason distribution, per-underlying
-  buckets. The LLM only *interprets* that compact summary; it never computes a stat.
-- **Bounded, so it scales.** The model never sees raw rows — only the aggregates (fixed
-  size no matter how much history) plus a short window of recent past reflections. That's
-  what lets it work at 10 or 10,000 closed trades without blowing the context. When
-  reflections themselves grow large, the recency window becomes a pgvector similarity
-  retrieval — the same RAG pattern as case memory, second instance.
-- **Minimum sample size.** Below `MIN_SAMPLE` closed trades it returns an honest "not
-  enough data yet" instead of pattern-matching on noise.
-- **It remembers its own past.** Each reflection is a first-class domain object persisted
-  via `ReflectionRepository` (Postgres) and fed back into the next run for continuity.
+> Redis is *what's true now*. Postgres is *what happened*. The desk and the filing cabinet.
 
-**Postgres vs. Langfuse here, deliberately both:** the reflection is *stored* in Postgres
-because it's app state the product reads back and reuses (the filing cabinet — the document
-you retrieve and act on). The reflection *run* is also *traced* to Langfuse (the security
-camera — an observability copy of the LLM call: prompt, output, cost). You don't retrieve
-business documents from security-camera footage; the two stores answer different questions.
-
-## Concurrency model
+## Concurrency
 
 | Work | Worker | Why |
 |---|---|---|
-| I/O — feed, API, dashboard push | single `asyncio` event loop | never blocks on the network |
+| I/O — feed, API, dashboard push | one `asyncio` loop | never blocks on the network |
 | CPU — greeks, IV fit, Monte-Carlo | process pool | bypasses the GIL |
-| LLM — Analyst, Critic | async + `Semaphore(k)` | network I/O; caps spend and rate limits |
+| LLM calls | async + `Semaphore(k)` | network-bound; caps spend and rate limits |
 
-## Tech stack
+## Stack
 
-**Essential** — Python 3.12 / FastAPI / Pydantic / asyncio, numpy/scipy/py_vollib/polars
-(the quant core also has pure-Python fallbacks, so tests need none of these), Redis (hot
-state + pub/sub), Postgres (candidates, positions), React + TypeScript + Recharts +
-Tailwind, Docker Compose.
+Python 3.12, FastAPI, Pydantic, asyncio; numpy/scipy/py_vollib/polars (with pure-Python
+fallbacks in `quant/`, so tests need none of them); Redis; Postgres + pgvector; React +
+TypeScript + Recharts + Tailwind; Docker Compose. On the AI side: the Anthropic SDK directly,
+LangGraph only for the debate loops, Langfuse for tracing.
 
-**AI layer** — Anthropic SDK (direct calls, no framework), LangGraph (the Analyst↔Critic
-loop only), Langfuse (tracing + scoring).
+Feeds sit behind one `MarketData` adapter — yfinance (free, delayed, dev) and Interactive
+Brokers (stubbed, not wired). Swapping is a one-line change.
 
-**In use** — pgvector (case memory: similarity recall over closed trades).
-
-**Deferred, on a real trigger** — Kafka (only if Redis Streams stops being enough at
-scale), Kubernetes / Terraform-in-anger (see [`docs/DEPLOYMENT.md`](DEPLOYMENT.md)).
-
-**Deliberately not used** — RabbitMQ (an asyncio/Redis queue suffices solo), the broad
-LangChain framework, MCP (plain typed functions give the same shared code path with less
-indirection).
-
-**Data feeds** (behind one `MarketData` Adapter): yfinance (free, delayed, dev) and
-Interactive Brokers (real-time, stubbed but not wired). Swapping is a one-line change.
-
-> **Redis vs. Postgres, in one line:** Redis is *"what's true now"*; Postgres is *"what
-> happened."* Redis is the desk, Postgres is the filing cabinet.
+Deliberately *not* used: RabbitMQ (an asyncio/Redis queue is plenty solo), the broad LangChain
+framework, MCP. Deferred until a real trigger: Kafka, Kubernetes, applied Terraform.
 
 ## Repo layout
 
 ```
-Paz-Rav/
-  src/paz_rav/
-    adapters/     market-data ports (yfinance/IBKR)       Adapter
-    quant/        greeks · implied_vol · pop · valuation   pure functions — the accuracy core
-    analytics/    iv · regime · rsi · features             turns chains into one Feature
-    strategies/   base + iron_condor + dacs + registry     Strategy + Factory
-    builder/      annotate + enumerate + rank
-    agents/       analyst · critic · graph · explainer     the two-agent loop (LangGraph)
-    positions/    base + exit_rules + exit_manager         advisory-only lifecycle
-    services/     advisor/ — close-timing debate           the one extracted microservice
-    store/        base + memory/redis/postgres             Repository
-    bus/          channels for live push                   Observer
-    contracts/    shared Pydantic schemas
-    api/          FastAPI + WebSocket
-  tests/          pytest suite (pure, no infra)
-  scripts/        runnable demos (pipeline/builder/backtest)
-  web/            React dashboard
-  infra/terraform/  AWS scaffold (not applied — see docs/DEPLOYMENT.md)
+src/paz_rav/
+  adapters/    market-data ports (yfinance / IBKR)        Adapter
+  quant/       greeks · implied_vol · pop · valuation     pure functions — the accuracy core
+  analytics/   iv · regime · rsi · features               chains → one Feature
+  strategies/  base + iron_condor + dacs + registry       Strategy + Factory
+  builder/     annotate + enumerate + rank
+  agents/      analyst · critic · graph · explainer       + the LLM debates
+  positions/   base + exit_rules + exit_manager           advisory-only lifecycle
+  services/    advisor/ — the one extracted service
+  store/       base + memory / redis / postgres           Repository
+  bus/         channels for live push                     Observer
+  contracts/   shared Pydantic schemas
+  api/         FastAPI + WebSocket
+tests/         pytest, pure — no infra, no network
+scripts/       runnable demos (pipeline / builder / backtest)
+web/           React dashboard
+infra/         Terraform scaffold — never applied
 ```
 
-Patterns doing the work: **Strategy** (interchangeable structures), **Factory** (build by
-name), **Adapter** (swap vendor), **Repository** (swap storage), **Observer** (live push).
+Patterns pulling their weight: **Strategy** (interchangeable structures), **Factory** (build
+by name), **Adapter** (swap vendor), **Repository** (swap storage), **Observer** (live push).
