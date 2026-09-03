@@ -1,0 +1,506 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SPX Adaptive Iron Condor — מסמך היכרות</title>
+<style>
+
+  /* ---------- tokens ---------- */
+  :root{
+    --ink-950:#0A0D12;
+    --ink-900:#12161D;
+    --ink-850:#161B24;
+    --ink-800:#1C222D;
+    --ink-700:#2B3340;
+    --ink-600:#3D4756;
+    --text-hi:#F2EFE8;
+    --text-lo:#AEB6C2;
+    --text-faint:#6C7686;
+    --gold:#D9A441;
+    --gold-soft:#E9C583;
+    --pass:#4FA37E;
+    --pass-soft:#274A3C;
+    --reject:#C6604A;
+    --reject-soft:#4A2A22;
+    --rule:rgba(255,255,255,0.09);
+    --shadow: 0 20px 60px -30px rgba(0,0,0,0.6);
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      --ink-950:#F1F3F5;
+      --ink-900:#FFFFFF;
+      --ink-850:#FBFAF7;
+      --ink-800:#FFFFFF;
+      --ink-700:#D9DEE4;
+      --ink-600:#B9C1CB;
+      --text-hi:#171B21;
+      --text-lo:#4B5563;
+      --text-faint:#8A93A0;
+      --gold:#A9701E;
+      --gold-soft:#C98A2C;
+      --pass:#2E7C57;
+      --pass-soft:#DCEFE5;
+      --reject:#A63F28;
+      --reject-soft:#F5E1DB;
+      --rule:rgba(20,24,30,0.10);
+      --shadow: 0 20px 50px -30px rgba(20,24,30,0.25);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ink-950:#0A0D12; --ink-900:#12161D; --ink-850:#161B24; --ink-800:#1C222D;
+    --ink-700:#2B3340; --ink-600:#3D4756;
+    --text-hi:#F2EFE8; --text-lo:#AEB6C2; --text-faint:#6C7686;
+    --gold:#D9A441; --gold-soft:#E9C583;
+    --pass:#4FA37E; --pass-soft:#274A3C; --reject:#C6604A; --reject-soft:#4A2A22;
+    --rule:rgba(255,255,255,0.09); --shadow:0 20px 60px -30px rgba(0,0,0,0.6);
+  }
+  :root[data-theme="light"]{
+    --ink-950:#F1F3F5; --ink-900:#FFFFFF; --ink-850:#FBFAF7; --ink-800:#FFFFFF;
+    --ink-700:#D9DEE4; --ink-600:#B9C1CB;
+    --text-hi:#171B21; --text-lo:#4B5563; --text-faint:#8A93A0;
+    --gold:#A9701E; --gold-soft:#C98A2C;
+    --pass:#2E7C57; --pass-soft:#DCEFE5; --reject:#A63F28; --reject-soft:#F5E1DB;
+    --rule:rgba(20,24,30,0.10); --shadow:0 20px 50px -30px rgba(20,24,30,0.25);
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--ink-950);
+    color:var(--text-hi);
+    font-family:Georgia,"Iowan Old Style","Noto Serif Hebrew","Times New Roman",serif;
+    font-size:17px;
+    line-height:1.7;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{ background:var(--gold); color:var(--ink-950); }
+
+  .display{
+    font-family:-apple-system,"Segoe UI","Helvetica Neue",Arial,"Noto Sans Hebrew",sans-serif;
+    font-weight:800;
+    letter-spacing:-0.01em;
+    text-wrap:balance;
+  }
+  .mono{
+    font-family:ui-monospace,"SF Mono","Cascadia Code",Consolas,"Roboto Mono",monospace;
+    font-variant-numeric:tabular-nums;
+    direction:ltr;
+    unicode-bidi:isolate;
+  }
+  .eyebrow{
+    font-family:-apple-system,"Segoe UI","Helvetica Neue",Arial,sans-serif;
+    font-weight:700;
+    font-size:12.5px;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--gold);
+  }
+
+  a{ color:var(--gold-soft); }
+
+  .wrap{ max-width:920px; margin:0 auto; padding:0 28px; }
+
+  /* ---------- hero ---------- */
+  header.hero{
+    padding:96px 0 80px;
+    background:
+      radial-gradient(1100px 480px at 82% -10%, color-mix(in srgb, var(--gold) 15%, transparent), transparent 60%),
+      var(--ink-950);
+    border-bottom:1px solid var(--rule);
+  }
+  header.hero .wrap{ display:flex; flex-direction:column; gap:28px; }
+  h1.display{
+    font-size:clamp(34px, 5.2vw, 54px);
+    line-height:1.12;
+    margin:0;
+    color:var(--text-hi);
+  }
+  h1.display em{
+    font-style:normal;
+    color:var(--gold);
+  }
+  .hero-sub{
+    max-width:60ch;
+    color:var(--text-lo);
+    font-size:19px;
+    margin:0;
+  }
+  .hero-facts{
+    display:flex; flex-wrap:wrap; gap:10px;
+    margin-top:8px;
+  }
+  .fact-chip{
+    display:flex; align-items:baseline; gap:8px;
+    padding:9px 14px;
+    border:1px solid var(--ink-700);
+    border-radius:8px;
+    background:var(--ink-900);
+    font-family:-apple-system,"Segoe UI",Arial,sans-serif;
+    font-size:13.5px;
+    color:var(--text-lo);
+  }
+  .fact-chip b.mono{ color:var(--gold); font-size:14px; }
+
+  /* ---------- vix gauge ---------- */
+  .gauge-card{
+    margin-top:12px;
+    border:1px solid var(--ink-700);
+    background:var(--ink-900);
+    border-radius:14px;
+    padding:26px 26px 22px;
+    box-shadow:var(--shadow);
+  }
+  .gauge-card .eyebrow{ margin-bottom:4px; display:block; }
+  .gauge-card h3{
+    margin:0 0 18px;
+    font-size:16px;
+    color:var(--text-hi);
+    font-family:-apple-system,"Segoe UI",Arial,sans-serif;
+    font-weight:700;
+  }
+  .gauge-track{
+    position:relative;
+    display:flex;
+    height:46px;
+    border-radius:8px;
+    overflow:hidden;
+    border:1px solid var(--ink-700);
+  }
+  .gseg{ display:flex; align-items:center; justify-content:center; position:relative; }
+  .gseg small{
+    font-family:-apple-system,"Segoe UI",Arial,sans-serif;
+    font-weight:700; font-size:12px; letter-spacing:.02em;
+  }
+  .gseg.low{ flex:14; background:color-mix(in srgb, var(--pass) 30%, var(--ink-850)); color:var(--pass); }
+  .gseg.mid{ flex:8;  background:color-mix(in srgb, var(--gold) 26%, var(--ink-850)); color:var(--gold); }
+  .gseg.high{ flex:10; background:color-mix(in srgb, var(--reject) 30%, var(--ink-850)); color:var(--reject); }
+  .gauge-needle{
+    position:absolute; top:-6px; bottom:-6px; width:2px; background:var(--text-hi);
+    right:31%;
+  }
+  .gauge-needle::after{
+    content:"VIX 17.8";
+    position:absolute; top:-24px; right:50%; transform:translateX(50%);
+    font-family:ui-monospace,monospace; font-size:11.5px; color:var(--text-hi);
+    white-space:nowrap; direction:ltr;
+  }
+  .gauge-legend{
+    display:grid; grid-template-columns:1fr 1fr 1fr; gap:18px;
+    margin-top:22px;
+  }
+  .gauge-legend div{ font-family:-apple-system,"Segoe UI",Arial,sans-serif; font-size:12.5px; color:var(--text-faint); }
+  .gauge-legend b{ display:block; color:var(--text-hi); font-size:13.5px; margin-bottom:3px; }
+  .gauge-legend .mono{ color:inherit; }
+
+  /* ---------- sections ---------- */
+  section{ padding:76px 0; border-bottom:1px solid var(--rule); }
+  section:last-of-type{ border-bottom:none; }
+  .section-head{ max-width:60ch; margin-bottom:44px; }
+  .section-head .eyebrow{ margin-bottom:10px; display:block; }
+  h2.display{
+    font-size:clamp(26px, 3.4vw, 34px);
+    margin:0 0 14px;
+    color:var(--text-hi);
+  }
+  .section-head p{ color:var(--text-lo); margin:0; font-size:17px; }
+
+  /* timeline */
+  .timeline{ display:flex; flex-direction:column; }
+  .tstep{
+    display:grid;
+    grid-template-columns:56px 1fr;
+    gap:22px;
+    padding:26px 0;
+    border-top:1px solid var(--rule);
+  }
+  .tstep:first-child{ border-top:1px solid var(--rule); }
+  .tnum{
+    font-family:ui-monospace,monospace;
+    font-size:13px; color:var(--gold);
+    display:flex; align-items:flex-start; padding-top:3px;
+  }
+  .tstep h4{
+    margin:0 0 6px; font-size:18px;
+    font-family:-apple-system,"Segoe UI",Arial,sans-serif; font-weight:700;
+    color:var(--text-hi);
+  }
+  .tstep p{ margin:0; color:var(--text-lo); max-width:62ch; }
+  .tstep .mono.tag{
+    display:inline-block; margin-inline-start:10px;
+    font-size:12.5px; color:var(--gold-soft);
+    border:1px solid var(--ink-700); border-radius:6px; padding:2px 8px;
+  }
+  .exit-row{
+    display:grid; grid-template-columns:1fr 1fr; gap:16px;
+    margin-top:8px;
+  }
+  .exit-card{
+    border:1px solid var(--ink-700); border-radius:10px; padding:16px 18px;
+    background:var(--ink-900);
+  }
+  .exit-card .mono{ color:var(--gold); font-size:22px; font-weight:600; }
+  .exit-card p{ margin:6px 0 0; color:var(--text-lo); font-size:14.5px; }
+
+  /* locks */
+  .locks{ display:grid; grid-template-columns:repeat(4,1fr); gap:16px; }
+  .lock{
+    border:1px solid var(--ink-700); background:var(--ink-900);
+    border-radius:12px; padding:20px 18px;
+    display:flex; flex-direction:column; gap:10px;
+  }
+  .lock .lnum{ font-family:ui-monospace,monospace; color:var(--gold); font-size:13px; }
+  .lock h4{
+    margin:0; font-size:15.5px;
+    font-family:-apple-system,"Segoe UI",Arial,sans-serif; font-weight:700;
+    color:var(--text-hi);
+  }
+  .lock p{ margin:0; font-size:13.5px; color:var(--text-lo); }
+  .lock .default{
+    margin-top:auto; font-family:ui-monospace,monospace; font-size:11.5px;
+    color:var(--pass); background:var(--pass-soft);
+    display:inline-block; padding:3px 8px; border-radius:5px; width:fit-content;
+  }
+
+  /* architecture */
+  .arch{ display:grid; grid-template-columns:repeat(5,1fr); gap:10px; align-items:stretch; }
+  .anode{
+    border:1px solid var(--ink-700); border-radius:10px; padding:16px 12px;
+    background:var(--ink-900); text-align:center;
+    display:flex; flex-direction:column; gap:6px; justify-content:center;
+    min-height:118px;
+  }
+  .anode.core{ border-color:var(--gold); box-shadow:0 0 0 1px color-mix(in srgb, var(--gold) 40%, transparent); }
+  .anode b{
+    font-family:-apple-system,"Segoe UI",Arial,sans-serif; font-size:13.5px;
+    color:var(--text-hi);
+  }
+  .anode span{ font-size:12px; color:var(--text-faint); line-height:1.4; }
+  .arch-note{
+    margin-top:22px; padding:16px 18px;
+    border-inline-start:3px solid var(--gold);
+    background:var(--ink-900); border-radius:0 8px 8px 0;
+    color:var(--text-lo); font-size:15px;
+  }
+  .arch-note b{ color:var(--text-hi); }
+
+  /* risk */
+  .risk-box{
+    border:1px solid color-mix(in srgb, var(--reject) 45%, var(--ink-700));
+    background:var(--ink-900);
+    border-radius:14px;
+    padding:30px 30px 26px;
+  }
+  .risk-stats{
+    display:grid; grid-template-columns:1fr 1fr; gap:16px;
+    margin-bottom:24px;
+  }
+  .rstat{
+    border:1px solid var(--ink-700); border-radius:10px; padding:16px 18px;
+    background:var(--ink-850);
+  }
+  .rstat .mono{ font-size:26px; font-weight:600; }
+  .rstat.target .mono{ color:var(--pass); }
+  .rstat.max .mono{ color:var(--reject); }
+  .rstat p{ margin:6px 0 0; font-size:13.5px; color:var(--text-lo); }
+  .risk-list{ margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:12px; }
+  .risk-list li{
+    display:grid; grid-template-columns:20px 1fr; gap:10px;
+    color:var(--text-lo); font-size:15px;
+  }
+  .risk-list li::before{ content:"—"; color:var(--reject); font-family:ui-monospace,monospace; }
+  .risk-list li b{ color:var(--text-hi); }
+
+  /* footer */
+  footer{ padding:56px 0 90px; }
+  .status-line{
+    display:flex; align-items:center; gap:12px;
+    font-family:-apple-system,"Segoe UI",Arial,sans-serif;
+    font-size:13.5px; color:var(--text-faint);
+    margin-bottom:18px;
+  }
+  .dot{ width:8px; height:8px; border-radius:50%; background:var(--gold); box-shadow:0 0 0 3px color-mix(in srgb, var(--gold) 25%, transparent); }
+  footer p{ color:var(--text-lo); max-width:60ch; margin:0 0 8px; }
+  footer .fine{ color:var(--text-faint); font-size:13px; margin-top:26px; }
+
+  @media (max-width: 760px){
+    .locks{ grid-template-columns:1fr 1fr; }
+    .arch{ grid-template-columns:1fr 1fr; }
+    .gauge-legend{ grid-template-columns:1fr; }
+    .risk-stats{ grid-template-columns:1fr; }
+  }
+  @media (prefers-reduced-motion: reduce){ *{ scroll-behavior:auto !important; } }
+</style>
+</head>
+<body>
+
+  <header class="hero">
+    <div class="wrap">
+      <span class="eyebrow">מסמך היכרות · מוצר מסחר אלגוריתמי</span>
+      <h1 class="display">בוט שמוכר <em>ביטוח</em> על מדד ה-S&amp;P 500 —<br>כל יום, באותה שעה, לפי אותם כללים בדיוק.</h1>
+      <p class="hero-sub">
+        המערכת פותחת ביום מסחר "קונדור ברזל" על ה-SPX — עסקה שמרוויחה מכך שהשוק <em>לא</em> זז יותר מדי,
+        בדיוק כמו חברת ביטוח שגובה פרמיה על סיכון שלרוב לא קורה. אין כאן בינה מלאכותית ואין ניחושים —
+        כל החלטה היא כלל מתמטי קבוע, וכל פעולה נרשמת לביקורת.
+      </p>
+      <div class="hero-facts">
+        <div class="fact-chip">⏱ פעולה יומית קבועה &nbsp;<b class="mono">14:30 ET</b></div>
+        <div class="fact-chip">📐 טווח תפוגה &nbsp;<b class="mono">35–45 DTE</b></div>
+        <div class="fact-chip">🛡 כנפי הגנה &nbsp;<b class="mono">50pt</b></div>
+        <div class="fact-chip">✅ שערי בטיחות לפני כל עסקה &nbsp;<b class="mono">4</b></div>
+      </div>
+
+      <div class="gauge-card">
+        <span class="eyebrow">מד המצב היומי</span>
+        <h3>המערכת קוראת את ה-VIX ובוחרת רמת זהירות — לא אתם, לא מנהל תיק, המערכת</h3>
+        <div class="gauge-track">
+          <div class="gseg low"><small>VIX &lt; 14</small></div>
+          <div class="gseg mid"><small>14–22</small></div>
+          <div class="gseg high"><small>VIX &gt; 22</small></div>
+          <div class="gauge-needle"></div>
+        </div>
+        <div class="gauge-legend">
+          <div><b>שוק רגוע</b><span class="mono">שורט דלתא 0.15 / 0.15</span><br><span>עסקה סמוכה יותר לשוק, פרמיה נמוכה יותר — כי הסיכון נמוך.</span></div>
+          <div><b>שוק בינוני</b><span class="mono">שורט דלתא 0.30 / 0.20</span><br><span>הטיה מכוונת: ה-put הקצר קרוב יותר, כי ירידות סטטיסטית חדות יותר מעליות.</span></div>
+          <div><b>שוק סוער</b><span class="mono">מעל 22 → השהיה</span><br><span>המערכת פשוט לא פותחת עסקה חדשה באותו יום. אין ניסיון "לתפוס תחתית".</span></div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <section id="flow">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow">איך יום עבודה נראה</span>
+        <h2 class="display">שישה צעדים, כל יום, באותו סדר</h2>
+        <p>שום החלטה לא מתקבלת "על פי תחושה". הרצף הזה קורה זהה בכל יום מסחר, ומתועד בשלמותו.</p>
+      </div>
+
+      <div class="timeline">
+        <div class="tstep">
+          <div class="tnum">01</div>
+          <div><h4>קריאת מצב שוק <span class="mono tag">VIX, ממוצע 5 דק׳</span></h4>
+          <p>ממוצע נלקח במקום נקודת מחיר בודדת, כדי לא ליפול על "גליץ'" רגעי בנתון.</p></div>
+        </div>
+        <div class="tstep">
+          <div class="tnum">02</div>
+          <div><h4>בחירת מבנה העסקה</h4>
+          <p>תפוגה בטווח 35–45 יום, שורט strikes לפי הדלתא של המשטר הנוכחי, וכנפי הגנה של 50 נקודות. אם לכנף אין קונה בכלל — המערכת מזיזה אותה עד שיש.</p></div>
+        </div>
+        <div class="tstep">
+          <div class="tnum">03</div>
+          <div><h4>ארבעה שערי בטיחות</h4>
+          <p>קרדיט מינימלי, מרווח נזילות מקסימלי, איסור על חפיפת עסקאות פתוחות, ובדיקת מרווח (margin) אמיתית מול הברוקר. עסקה שנכשלת באחד — לא יוצאת, והכישלון נרשם עם הסיבה המדויקת.</p></div>
+        </div>
+        <div class="tstep">
+          <div class="tnum">04</div>
+          <div><h4>אישור אנושי <span class="mono tag">ברירת מחדל</span></h4>
+          <p>עסקה שעברה את כל השערים לא נשלחת אוטומטית — היא מוצגת בממשק לאישור. רק לחיצה שלכם שולחת אותה, ולפני השליחה המערכת מתמחרת ובודקת הכול מחדש (המחיר שראיתם עלול כבר להתיישן).</p></div>
+        </div>
+        <div class="tstep">
+          <div class="tnum">05</div>
+          <div><h4>כניסה מדורגת לשוק</h4>
+          <p>הזמנת לימיט שמתעדכנת טיק אחד כל 10 שניות, ומתבטלת לבד אם לא התמלאה תוך 120 שניות — כדי לא "לרדוף" את השוק.</p></div>
+        </div>
+        <div class="tstep">
+          <div class="tnum">06</div>
+          <div><h4>ניהול עצמאי עד היציאה</h4>
+          <div class="exit-row">
+            <div class="exit-card"><span class="mono">$50</span><p>יעד רווח קבוע לחוזה — הזמנת GTC יוצאת מיד עם המילוי ורודפת את המחיר בלי שצריך לגעת בה.</p></div>
+            <div class="exit-card"><span class="mono">25 DTE</span><p>אם עסקה מגיעה לחלון הזה בלי שהגיעה ליעד, המערכת סוגרת אותה בכפייה — לפני אזור הגמא המסוכן.</p></div>
+          </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="safety">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow">שכבת הבטיחות</span>
+        <h2 class="display">ארבעה מנעולים בלתי תלויים — כולם צריכים להשתחרר</h2>
+        <p>אף שכבה אחת לא מספיקה כדי להזיז כסף. זו לא הגזמה — זו הארכיטקטורה בפועל.</p>
+      </div>
+      <div class="locks">
+        <div class="lock">
+          <span class="lnum">01</span>
+          <h4>שליחת הזמנות</h4>
+          <p>מתג שקובע אם הזמנה בכלל יוצאת לברוקר. כבוי כברירת מחדל — הכול רץ כסימולציה עד שמפעילים בכוונה.</p>
+          <span class="default mono">כבוי כברירת מחדל</span>
+        </div>
+        <div class="lock">
+          <span class="lnum">02</span>
+          <h4>אישור אדם</h4>
+          <p>עסקה שעברה את כל השערים ממתינה להחלטה שלכם, לא נשלחת לבד. אפשר לבטל את זה מודעות בלבד, לא בטעות.</p>
+          <span class="default mono">אנושי בלולאה</span>
+        </div>
+        <div class="lock">
+          <span class="lnum">03</span>
+          <h4>הגנת חשבון פייפר</h4>
+          <p>המערכת מסרבת לעלות אם החשבון המחובר לא מזוהה כחשבון בדיקה — כדי שקונפיגורציה שגויה לא תיגע בכסף אמיתי.</p>
+          <span class="default mono">DU* בלבד</span>
+        </div>
+        <div class="lock">
+          <span class="lnum">04</span>
+          <h4>מתג חירום</h4>
+          <p>כפתור יחיד בממשק שעוצר כל כניסה חדשה מיידית, בלי לגעת בפוזיציות פתוחות או ליציאות האוטומטיות שלהן.</p>
+          <span class="default mono">זמין תמיד</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="architecture">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow">מאחורי הקלעים</span>
+        <h2 class="display">חמישה שירותים נפרדים, תפקיד אחד ברור לכל אחד</h2>
+        <p>ההפרדה הזו היא כוונה, לא צירוף מקרים.</p>
+      </div>
+      <div class="arch">
+        <div class="anode"><b>שער IBKR</b><span>חיבור headless לברוקר, מתחדש לבד</span></div>
+        <div class="anode core"><b>מנוע המסחר</b><span>היחיד שמותר לו לשלוח הזמנה</span></div>
+        <div class="anode"><b>מסד נתונים</b><span>עסקאות, מילויים, כל החלטת שער</span></div>
+        <div class="anode"><b>API לדיווח</b><span>קריאה בלבד + מתג חירום</span></div>
+        <div class="anode"><b>קונסולת ווב</b><span>תצוגה, אישורים, אנליטיקה</span></div>
+      </div>
+      <div class="arch-note">
+        <b>ה-API לא יכול לסחור.</b> הוא קורא מהמסד נתונים ומהפך עמודת סטטוס אחת (מתג החירום) — זהו. כך שבאג
+        בשכבת הווב, ולו החמור ביותר, לא יכול להזיז פוזיציה. רק מנוע המסחר עצמו מחזיק את החיבור לברוקר.
+      </div>
+    </div>
+  </section>
+
+  <section id="risk">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow">בכנות, על הסיכון</span>
+        <h2 class="display">מכני לא אומר בטוח. הנה בדיוק מה שאתם חושפים</h2>
+        <p>מסמך שמסתיר את זה אינו מסמך רציני. הנתונים הבאים הם החישוב האמיתי של המבנה, לחוזה בודד.</p>
+      </div>
+      <div class="risk-box">
+        <div class="risk-stats">
+          <div class="rstat target"><span class="mono">$50</span><p>יעד הרווח הקבוע שהאסטרטגיה רודפת בכל עסקה.</p></div>
+          <div class="rstat max"><span class="mono">~$4,880</span><p>ההפסד המרבי התאורטי לחוזה בודד, אם השוק פורץ את כל הרוחב עד הכנף — לפני חלון ה-25 DTE.</p></div>
+        </div>
+        <ul class="risk-list">
+          <li><b>אין סטופ מבוסס-הפסד לפני 25 יום לתפוגה.</b> ההגנה היחידה עד אז היא רוחב הכנפיים הקבוע (50pt) — זו החלטת עיצוב מכוונת, לא פספוס.</li>
+          <li><b>היציאות פועלות לבד, בלי לחכות לאישור.</b> שכבת האישור מכסה רק כניסות חדשות — יעד הרווח ועצירת הגמא פועלים אוטומטית בכוונה, כדי שסטופ לא יחכה ללחיצה.</li>
+          <li><b>נתוני שוק מושהים כברירת מחדל.</b> בלי מנוי לנתונים חיים על ה-SPX, המחירים מפגרים כ-15 דקות — תקין לבדיקת התהליך, לא לתמחור כניסה אמיתית.</li>
+          <li><b>עסקה אחת ליום, מנה קבועה,</b> אלא אם אתם מאשרים כמות גדולה יותר בפועל בעת האישור.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap">
+      <div class="status-line"><span class="dot"></span> נכון להיום: המערכת רצה על חשבון פייפר של IBKR, בבדיקה מלאה, לפני כל מעבר לכסף אמיתי.</div>
+      <p>המערכת נבנתה כך שאפשר תמיד לענות על השאלה "למה לא נפתחה עסקה היום" — כל דחייה של שער בטיחות נשמרת עם הנתונים המדויקים שהובילו אליה.</p>
+      <p class="fine">מסמך זה נועד להסביר את עקרונות הפעולה של המערכת. אין לראות בו ייעוץ השקעות. מסחר באופציות כרוך בסיכון אובדן משמעותי של הון.</p>
+    </div>
+  </footer>
+
+</body>
+</html>
