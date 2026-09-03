@@ -130,15 +130,22 @@ async def run_entry_flow(ib: IB, acct: str, session_factory) -> None:
     if not decision["accepted"]:
         return
 
-    if not PLACE_ORDERS:
-        log.info("Gates passed but PLACE_ORDERS=0 (dry-run) — no order transmitted")
-        return
-
     # Human in the loop: park the condor for approval rather than transmitting it now.
+    #
+    # This runs in dry-run too, and must: process_proposals() re-checks PLACE_ORDERS before
+    # it transmits anything, so writing a proposal cannot move money. Checking PLACE_ORDERS
+    # first — as this did — made the approval queue unreachable in the shipped defaults
+    # (PLACE_ORDERS=0, REQUIRE_APPROVAL=1), so trade_proposals stayed empty forever and the
+    # console's approvals page could never show anything.
     if CONFIG.require_approval:
         pid = _persist_proposal(session_factory, condor, decision["details"])
-        log.info("Entry parked for manual approval", extra={"proposal_id": pid,
-                                                            "credit": condor.combo_mid})
+        log.info("Entry parked for manual approval",
+                 extra={"proposal_id": pid, "credit": condor.combo_mid,
+                        "place_orders": PLACE_ORDERS})
+        return
+
+    if not PLACE_ORDERS:
+        log.info("Gates passed but PLACE_ORDERS=0 (dry-run) — no order transmitted")
         return
 
     result = await place_entry_and_tp(ib, bag, condor.combo_mid)
