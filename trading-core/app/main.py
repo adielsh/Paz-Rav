@@ -158,6 +158,7 @@ def _persist_proposal(session_factory, condor, gate_details: dict) -> int:
     from datetime import timedelta
     with session_factory() as s:
         p = db.TradeProposal(
+            user_id=db.owner_user_id(),
             status="pending", expiry=condor.expiry, dte=condor.dte, vix_avg=condor.vix_avg,
             put_short_strike=condor.put_short, put_long_strike=condor.put_long,
             call_short_strike=condor.call_short, call_long_strike=condor.call_long,
@@ -290,6 +291,7 @@ def _finish_proposal(session_factory, pid: int, status: str, trade_id: int | Non
 def _persist_trade_from_proposal(session_factory, spec: dict, result) -> int:
     with session_factory() as s:
         t = db.Trade(
+            user_id=spec.get("user_id") or db.owner_user_id(),
             expiry=spec["expiry"], dte=spec["dte"], vix_avg=spec["vix_avg"],
             put_short_strike=spec["put_short_strike"], put_long_strike=spec["put_long_strike"],
             call_short_strike=spec["call_short_strike"], call_long_strike=spec["call_long_strike"],
@@ -310,7 +312,8 @@ def _persist_trade_from_proposal(session_factory, spec: dict, result) -> int:
 
 def _persist_gate(session_factory, vix, accepted, reason, details) -> None:
     with session_factory() as s:
-        s.add(db.GateDecision(vix=vix, accepted=accepted, reason=reason, details=details))
+        s.add(db.GateDecision(user_id=db.owner_user_id(), vix=vix, accepted=accepted,
+                              reason=reason, details=details))
         s.commit()
 
 
@@ -333,6 +336,7 @@ def _persist_close(session_factory, trade_id: int, debit: float, kind: str, stat
 def _persist_trade(session_factory, condor, result) -> None:
     with session_factory() as s:
         t = db.Trade(
+            user_id=db.owner_user_id(),
             expiry=condor.expiry, dte=condor.dte, vix_avg=condor.vix_avg,
             put_short_strike=condor.put_short, put_long_strike=condor.put_long,
             call_short_strike=condor.call_short, call_long_strike=condor.call_long,

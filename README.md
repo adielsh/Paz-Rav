@@ -155,6 +155,30 @@ Every grid is AG Grid: sortable, per-column filters, full-text search, CSV expor
 columns. Date columns sort chronologically, not lexicographically. Rows are tinted by outcome
 and expand inline to show the individual option legs.
 
+### Accounts and what each one can see
+
+Every row the console serves is filtered by the signed-in account. `trades`, `gate_decisions`,
+`trade_proposals`, `control` and `nav_snapshots` carry a `user_id`; `pnl` and `fills` are scoped
+through their parent trade. A second account sees zero trades, zero gate decisions and zero P&L,
+and `POST /proposals/{id}/approve` on a condor it does not own returns 404 — the same answer as
+a proposal that does not exist, so the id itself leaks nothing.
+
+Approving is the write that matters here: it is what eventually puts money to work. The
+authorisation check is the `user_id` predicate in the `UPDATE` itself rather than a separate
+lookup, so there is no window between checking and writing.
+
+**The broker connection is the owner's, and says so.** `ib_bridge` holds one IB client against
+one gateway and one account, so `/ib/*` is not per-user data and no `WHERE` clause could make it
+so. Those routes return **403** to anyone but the owner instead of quietly showing them someone
+else's positions. The same applies to the kill switch: `GET /control` returns
+`available: false` for an account with no daemon, and the console hides the control rather than
+offering a switch that toggles nothing. This is the boundary that lifts when a second broker
+connection exists — it is not a placeholder to be patched with a filter.
+
+Rows written before isolation existed are backfilled to the owner account on first boot, since
+one broker connection produced all of them. A row left unclaimed is visible to nobody, which is
+the safe direction to fail.
+
 ### Ask about the data
 
 A bot button in the corner of every page opens a chat about whatever is on screen — "how much

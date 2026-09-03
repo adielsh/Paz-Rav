@@ -28,6 +28,8 @@ export interface TradeProposal {
 
 export interface Control {
   id: number; trading_enabled: boolean; notes: string | null; updated_by: string | null; updated_at: string;
+  // false when this account has no daemon of its own (see GET /control).
+  available?: boolean;
 }
 export interface PnlSummary { total: number; closed: number; }
 export interface PnlPoint { computed_at: string; realized: number; }

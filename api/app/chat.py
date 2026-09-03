@@ -97,8 +97,14 @@ def _month(day: str) -> str:
     return day[:6] if day and len(day) >= 6 else ""
 
 
-def build_snapshot(engine, flex_payload: dict | None) -> dict:
-    """Everything the model is allowed to know, computed here and nowhere else."""
+def build_snapshot(engine, flex_payload: dict | None, user_id: int,
+                   is_owner: bool = True) -> dict:
+    """Everything the model is allowed to know, computed here and nowhere else.
+
+    Scoped to one account. The Flex half was already per-user; the daemon half reads tables
+    that are now owner-stamped, and is filtered on the same user_id the API filters on — an
+    assistant that could read across accounts would be a data leak wearing a friendly face.
+    """
 
     def rows(sql: str, **p) -> list[dict]:
         with engine.connect() as c:
@@ -116,22 +122,27 @@ def build_snapshot(engine, flex_payload: dict | None) -> dict:
         "note": "Every number here is computed by the server. Quote, do not recompute.",
     }
 
-    # ---- the daemon's own database -------------------------------------------------
-    by_status = rows("SELECT status, is_demo, count(*) AS n FROM trades GROUP BY 1, 2")
+    # ---- the daemon's own database, this account's rows only -------------------------
+    uid = user_id
+    by_status = rows("SELECT status, is_demo, count(*) AS n FROM trades "
+                     "WHERE user_id = :uid GROUP BY 1, 2", uid=uid)
     open_real = rows(
         "SELECT id, created_at, expiry, dte, vix_avg, entry_credit, quantity, "
         "put_short_strike, put_long_strike, call_short_strike, call_long_strike "
-        "FROM trades WHERE status = 'open' AND is_demo IS NOT TRUE ORDER BY created_at DESC")
-    pnl = rows("SELECT COALESCE(SUM(realized), 0) AS total, count(*) AS closed FROM pnl")
+        "FROM trades WHERE user_id = :uid AND status = 'open' AND is_demo IS NOT TRUE "
+        "ORDER BY created_at DESC", uid=uid)
+    pnl = rows("SELECT COALESCE(SUM(p.realized), 0) AS total, count(*) AS closed "
+               "FROM pnl p JOIN trades t ON t.id = p.trade_id WHERE t.user_id = :uid", uid=uid)
     recent = rows(
         "SELECT t.id, t.created_at::date AS date, t.status, t.is_demo, t.expiry, t.dte, "
         "t.vix_avg, t.entry_credit, t.quantity, p.realized "
         "FROM trades t LEFT JOIN pnl p ON p.trade_id = t.id "
-        "ORDER BY t.created_at DESC LIMIT 15")
+        "WHERE t.user_id = :uid ORDER BY t.created_at DESC LIMIT 15", uid=uid)
     gates = rows(
-        "SELECT accepted, reason, count(*) AS n FROM gate_decisions "
-        "GROUP BY 1, 2 ORDER BY n DESC LIMIT 12")
-    control = rows("SELECT trading_enabled, updated_at, updated_by FROM control WHERE id = 1")
+        "SELECT accepted, reason, count(*) AS n FROM gate_decisions WHERE user_id = :uid "
+        "GROUP BY 1, 2 ORDER BY n DESC LIMIT 12", uid=uid)
+    control = rows("SELECT trading_enabled, updated_at, updated_by FROM control "
+                   "WHERE user_id = :uid", uid=uid)
 
     snap["bot_db"] = {
         "what_this_is": "The trading daemon's durable log. Rows with demo=true are seeded "
@@ -154,20 +165,24 @@ def build_snapshot(engine, flex_payload: dict | None) -> dict:
             for r in recent],
         "gate_decisions_by_reason": [
             {"accepted": r["accepted"], "reason": r["reason"], "n": r["n"]} for r in gates],
-        "pending_proposals": one("SELECT count(*) FROM trade_proposals WHERE status = 'pending'"),
+        "pending_proposals": one("SELECT count(*) FROM trade_proposals "
+                                 "WHERE user_id = :uid AND status = 'pending'", uid=uid),
         "trading_enabled": control[0]["trading_enabled"] if control else None,
     }
 
     # ---- live paper gateway (last recorded snapshot; no IB call on this path) -------
+    # There is one broker connection and it belongs to the owner, so nobody else is told
+    # anything about it — not even that it exists.
     nav = rows("SELECT ts, net_liq, daily_pnl, unrealized FROM nav_snapshots "
-               "ORDER BY ts DESC LIMIT 1")
+               "WHERE user_id = :uid ORDER BY ts DESC LIMIT 1", uid=uid) if is_owner else []
     snap["live_paper_account"] = {
         "what_this_is": "IBKR paper (practice) account, last recorded snapshot.",
         "as_of": nav[0]["ts"].isoformat() if nav else None,
         "net_liq": _f(nav[0]["net_liq"]) if nav else None,
         "daily_pnl": _f(nav[0]["daily_pnl"]) if nav else None,
         "unrealized": _f(nav[0]["unrealized"]) if nav else None,
-    } if nav else {"what_this_is": "IBKR paper account", "available": False}
+    } if nav else {"what_this_is": "IBKR paper account", "available": False,
+                   "why": "This account has no broker connection in this console."}
 
     # ---- the real account, from the cached Flex statement ---------------------------
     if not (flex_payload and flex_payload.get("ok")):
@@ -246,7 +261,7 @@ def build_snapshot(engine, flex_payload: dict | None) -> dict:
     return snap
 
 
-def build_router(engine, user_id_dep, creds_dep, flex_cache_read):
+def build_router(engine, user_id_dep, creds_dep, flex_cache_read, is_owner):
     router = APIRouter(prefix="/chat", tags=["chat"])
 
     def _key() -> str | None:
@@ -274,7 +289,8 @@ def build_router(engine, user_id_dep, creds_dep, flex_cache_read):
             raise HTTPException(500, "the anthropic package is not installed in this image")
 
         cached = flex_cache_read(uid)
-        snapshot = build_snapshot(engine, cached[1] if cached else None)
+        snapshot = build_snapshot(engine, cached[1] if cached else None, uid,
+                                  is_owner=is_owner(uid))
 
         import json
         # Render order is system -> messages, so the stable half (instructions + snapshot)
