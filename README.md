@@ -155,6 +155,65 @@ Every grid is AG Grid: sortable, per-column filters, full-text search, CSV expor
 columns. Date columns sort chronologically, not lexicographically. Rows are tinted by outcome
 and expand inline to show the individual option legs.
 
+### Ask about the data
+
+A bot button in the corner of every page opens a chat about whatever is on screen — "how much
+has the real account actually made", "which underlyings do I trade most", "why hasn't the bot
+opened a position".
+
+It is grounded, not chatty. The server builds a snapshot of your account — counts, totals,
+per-underlying and per-month aggregates, the NAV curve's extremes, the most recent fills — all
+computed in Python from Postgres and the cached Flex statement, then hands it to Claude with one
+standing instruction: **never produce a number that is not already in the snapshot.** Ask for a
+figure the snapshot doesn't hold and it says so instead of estimating. That keeps the project's
+core rule intact — the model reads numbers, it never calculates them.
+
+It also has to name its source. Seeded demo rows, the real IBKR statement, and the paper gateway
+are three separate blocks in the snapshot, each flagged, and the model is told never to blend
+them into one figure.
+
+Set `ANTHROPIC_API_KEY` in `.env` and restart the `api` service to switch it on; leave it blank
+and the widget says it is off. The assistant is read-only — it cannot open, approve or close
+anything, and the API it talks to has no route that could.
+
+**Why it costs what it costs.** The snapshot is ~6,500 tokens and dominates the bill, so it is
+sent as a *cached* prompt prefix: the first question in a five-minute window writes the cache,
+every question after it re-reads the same bytes at a tenth of the price. That is also why
+`build_snapshot()` contains no timestamp — a clock reading in the prefix would change the bytes
+on every call and silently defeat the cache. Watch `usage.cache_read` in the response: if it
+stays zero across repeated questions, something made the prefix unstable.
+
+For the same reason `CHAT_EFFORT` defaults to `low`. Measured on the two questions that matter —
+keeping the real account apart from the seeded demo, and refusing to invent a win rate — low
+effort produced the same answers as the default in half the wall time. Looking a figure up in a
+JSON blob is not a reasoning problem.
+
+### Forgotten password
+
+There is no mail server in this stack, so the reset link is **written to the API log** instead
+of emailed. That is a deliberate trade: on a console bound to localhost, whoever can read the
+server's logs is already the person who owns the machine.
+
+1. On the sign-in screen, click **Forgot your password?** and enter the address.
+2. Read the link off the server:
+
+```bash
+docker compose logs api | grep "PASSWORD RESET LINK"
+# PASSWORD RESET LINK for you@example.com (valid 30 minutes, single use):
+#   http://127.0.0.1:8080/?reset=<token>
+```
+
+3. Open it. The console asks for a new password and signs you in.
+
+The link is **single use** and expires after `RESET_TTL_MINUTES` (default 30). Only its SHA-256
+is stored, so a database dump yields no working link. `/auth/forgot` answers identically whether
+or not the address is registered, and refuses to mint a second live token within 60 seconds.
+Changing your password from **Settings** kills any reset link still outstanding.
+
+> Note: Promtail ships container logs to Loki, so a reset link is also visible in Grafana on
+> `:3000` for its lifetime. Both ports are bound to localhost; treat access to either as
+> equivalent to account access.
+
 ---
 
 ## Configuration
@@ -171,6 +230,23 @@ All settings live in `.env` (git-ignored — **never commit it**). Copy `.env.ex
 To get Flex credentials: *Account Management → Reporting → Flex Web Service* (enable, copy the
 token), then create an **Activity Flex Query** including **Trades** and **Change in NAV**, period
 "Last 365 Calendar Days", and copy its Query ID.
+
+### Console accounts
+| Variable | Default | Purpose |
+|---|---|---|
+| `APP_SECRET_KEY` | — (required) | Signs sessions and encrypts stored broker credentials |
+| `ALLOW_SIGNUP` | `1` | `0` closes registration (the first account can always be created) |
+| `SESSION_HOURS` | `12` | Session lifetime |
+| `COOKIE_SECURE` | `0` | Set to `1` once the console is served over HTTPS |
+| `CONSOLE_URL` | `http://127.0.0.1:8080` | Base URL used to build the password-reset link |
+| `RESET_TTL_MINUTES` | `30` | How long a reset link stays usable (single use regardless) |
+
+### Assistant
+| Variable | Default | Purpose |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | — | Enables the in-console assistant. Blank = widget disabled |
+| `ANTHROPIC_WORKSPACE_ID` | — | Required only for an identity-linked key, which is rejected without it |
+| `CHAT_MODEL` | `claude-opus-5` | Model used for the assistant |
 
 ### Order safety
 | Variable | Default | Meaning |

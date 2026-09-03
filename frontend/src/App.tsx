@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Routes, Route } from "react-router-dom";
+import { Navigate, Routes, Route } from "react-router-dom";
 import { useAppSelector } from "./store/hooks";
 import { useMeQuery } from "./store/api";
 import Layout from "./components/Layout";
@@ -11,7 +11,7 @@ import Account from "./pages/Account";
 import Analytics from "./pages/Analytics";
 import RealAccount from "./pages/RealAccount";
 import Proposals from "./pages/Proposals";
-import Login from "./pages/Login";
+import Login, { resetTokenFromUrl } from "./pages/Login";
 import Settings from "./pages/Settings";
 
 export default function App() {
@@ -31,13 +31,19 @@ export default function App() {
   // One gate for the whole app: until /auth/me succeeds nothing else is rendered, so no
   // page can flash another user's cached data before the session is known.
   const { data: me, isLoading, isError } = useMeQuery();
+  // A reset link has to work in a browser that still holds a live session, otherwise the
+  // person who forgot their password lands on the dashboard and never sees the form.
+  if (resetTokenFromUrl()) return <Login />;
   if (isLoading) return <div className="bootwait">…</div>;
   if (isError || !me) return <Login />;
 
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route index element={<Overview />} />
+        {/* The real account is the landing page; the seeded demo view lives at its own
+            route so "/" can never open on simulated numbers. */}
+        <Route index element={<Navigate to="/real" replace />} />
+        <Route path="overview" element={<Overview />} />
         <Route path="approvals" element={<Proposals />} />
         <Route path="settings" element={<Settings />} />
         <Route path="real" element={<RealAccount />} />

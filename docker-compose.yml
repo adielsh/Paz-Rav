@@ -87,8 +87,17 @@ services:
       APP_SECRET_KEY: ${APP_SECRET_KEY:?APP_SECRET_KEY must be set in .env}
       ALLOW_SIGNUP: ${ALLOW_SIGNUP:-1}
       SESSION_HOURS: ${SESSION_HOURS:-12}
+      # Base URL the password-reset link points at, and how long that link stays usable.
+      CONSOLE_URL: ${CONSOLE_URL:-http://127.0.0.1:8080}
+      RESET_TTL_MINUTES: ${RESET_TTL_MINUTES:-30}
       COOKIE_SECURE: ${COOKIE_SECURE:-0}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://127.0.0.1:8080,http://localhost:8080}
+      # In-console assistant. Unset = the widget explains it is not configured and stops.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Only needed for an identity-linked key, which is rejected without it.
+      ANTHROPIC_WORKSPACE_ID: ${ANTHROPIC_WORKSPACE_ID:-}
+      CHAT_MODEL: ${CHAT_MODEL:-claude-opus-5}
+      CHAT_EFFORT: ${CHAT_EFFORT:-low}
     ports:
       - "127.0.0.1:8000:8000"         # localhost only
     networks: [condor]

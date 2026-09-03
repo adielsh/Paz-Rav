@@ -15,6 +15,7 @@ import hashlib
 import logging
 import os
 import re
+import secrets
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -34,6 +35,14 @@ SESSION_HOURS = int(os.getenv("SESSION_HOURS", "12"))
 # Cookies are same-site by default; set COOKIE_SECURE=1 once served over HTTPS.
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "0") == "1"
 ALLOW_SIGNUP = os.getenv("ALLOW_SIGNUP", "1") == "1"
+
+# Password reset. There is no mail server in this deployment, so the reset link is written
+# to the API log instead of emailed: on a console bound to localhost, whoever can read the
+# server's logs already owns the machine. The token is single-use and short-lived anyway,
+# and only its hash is stored, so a database dump does not hand over a working link.
+RESET_TTL_MINUTES = int(os.getenv("RESET_TTL_MINUTES", "30"))
+RESET_THROTTLE_SECONDS = int(os.getenv("RESET_THROTTLE_SECONDS", "60"))
+CONSOLE_URL = os.getenv("CONSOLE_URL", "http://127.0.0.1:8080").rstrip("/")
 
 _ph = PasswordHasher()
 
@@ -93,6 +102,18 @@ def ensure_tables(engine) -> None:
             "CREATE TABLE IF NOT EXISTS flex_cache_user ("
             "user_id integer PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, "
             "fetched_at timestamptz NOT NULL DEFAULT now(), payload jsonb)"))
+        # Password resets. Only the SHA-256 of the token is stored — the plaintext exists
+        # once, in the log line handed to the operator, and never in the database.
+        c.execute(text(
+            "CREATE TABLE IF NOT EXISTS password_resets ("
+            "id serial PRIMARY KEY, "
+            "user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE, "
+            "token_hash varchar(64) UNIQUE NOT NULL, "
+            "created_at timestamptz NOT NULL DEFAULT now(), "
+            "expires_at timestamptz NOT NULL, "
+            "used_at timestamptz)"))
+        c.execute(text(
+            "CREATE INDEX IF NOT EXISTS password_resets_user_idx ON password_resets (user_id)"))
 
 
 # ----------------------------------------------------------------- models ---
@@ -126,6 +147,15 @@ class PasswordChange(BaseModel):
     new_password: str = Field(min_length=10, max_length=200)
 
 
+class ForgotBody(BaseModel):
+    email: EmailStr
+
+
+class PasswordReset(BaseModel):
+    token: str = Field(min_length=16, max_length=200)
+    new_password: str = Field(min_length=10, max_length=200)
+
+
 class Me(BaseModel):
     id: int
     email: str
@@ -133,6 +163,25 @@ class Me(BaseModel):
     role: str
     has_flex: bool
     has_ib_login: bool
+
+
+# ------------------------------------------------------------- helpers -----
+
+def _check_password(pw: str) -> None:
+    """The one place the password rule lives — register, change and reset all use it."""
+    if not re.search(r"[A-Za-z]", pw) or not re.search(r"\d", pw):
+        raise HTTPException(422, "password needs at least one letter and one number")
+
+
+def _hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _mask_email(email: str) -> str:
+    """Enough to confirm which account a reset link belongs to, not enough to harvest one."""
+    name, _, domain = email.partition("@")
+    shown = name[0] + "•" * max(len(name) - 2, 1) + (name[-1] if len(name) > 1 else "")
+    return f"{shown}@{domain}"
 
 
 # ------------------------------------------------------------- session -----
@@ -227,8 +276,7 @@ def build_router(engine, user_id_dep):
             raise HTTPException(403, "sign-up is closed")
         if _row("SELECT id FROM users WHERE lower(email) = lower(:e)", e=body.email):
             raise HTTPException(409, "that email is already registered")
-        if not re.search(r"[A-Za-z]", body.password) or not re.search(r"\d", body.password):
-            raise HTTPException(422, "password needs at least one letter and one number")
+        _check_password(body.password)
         with engine.begin() as c:
             uid = c.execute(text(
                 "INSERT INTO users (email, password_hash, display_name, role) "
@@ -303,15 +351,88 @@ def build_router(engine, user_id_dep):
             _ph.verify(u["password_hash"], body.current_password)
         except (VerifyMismatchError, VerificationError, InvalidHashError):
             raise HTTPException(403, "current password is incorrect")
-        if not re.search(r"[A-Za-z]", body.new_password) or not re.search(r"\d", body.new_password):
-            raise HTTPException(422, "password needs at least one letter and one number")
+        _check_password(body.new_password)
         with engine.begin() as c:
             c.execute(text("UPDATE users SET password_hash = :p WHERE id = :i"),
                       {"p": _ph.hash(body.new_password), "i": uid})
+            # A password the owner just set deliberately outranks any reset link still in
+            # flight — burn them rather than leave a second way in.
+            c.execute(text("UPDATE password_resets SET used_at = now() "
+                           "WHERE user_id = :i AND used_at IS NULL"), {"i": uid})
         # Re-issue so the current tab stays signed in with a token minted after the change.
         _issue(resp, uid, u["email"])
         log.info("password changed", extra={"user_id": uid})
         return {"ok": True}
+
+    # ------------------------------------------------------- password reset ---
+    # No mail server exists here, so the link is delivered through the API log. The
+    # endpoints below are deliberately silent about whether an address is registered:
+    # /forgot answers identically either way.
+
+    @r.post("/forgot")
+    def forgot_password(body: ForgotBody) -> dict:
+        """Issue a single-use reset link. Always reports success."""
+        answer = {"ok": True, "delivery": "server-log", "ttl_minutes": RESET_TTL_MINUTES}
+        u = _row("SELECT id, email, is_active FROM users WHERE lower(email) = lower(:e)",
+                 e=body.email)
+        if not u or not u["is_active"]:
+            log.info("password reset requested for an unknown address")
+            return answer
+        recent = _row(
+            "SELECT id FROM password_resets WHERE user_id = :i AND used_at IS NULL "
+            "AND created_at > now() - make_interval(secs => :s) LIMIT 1",
+            i=u["id"], s=RESET_THROTTLE_SECONDS)
+        if recent:
+            # Someone is hammering the form (or double-clicked). Don't mint a second live
+            # token, and don't say so either.
+            return answer
+        token = secrets.token_urlsafe(32)
+        with engine.begin() as c:
+            c.execute(text(
+                "INSERT INTO password_resets (user_id, token_hash, expires_at) "
+                "VALUES (:u, :h, now() + make_interval(mins => :m))"),
+                {"u": u["id"], "h": _hash_token(token), "m": RESET_TTL_MINUTES})
+        # WARNING, not INFO: this must survive a default log configuration, because it is
+        # the only copy of the link that will ever exist.
+        log.warning(
+            "PASSWORD RESET LINK for %s (valid %d minutes, single use): %s/?reset=%s",
+            u["email"], RESET_TTL_MINUTES, CONSOLE_URL, token)
+        return answer
+
+    def _live_reset(token: str) -> dict | None:
+        return _row(
+            "SELECT p.id, p.user_id, u.email FROM password_resets p "
+            "JOIN users u ON u.id = p.user_id "
+            "WHERE p.token_hash = :h AND p.used_at IS NULL AND p.expires_at > now() "
+            "AND u.is_active",
+            h=_hash_token(token))
+
+    @r.get("/reset")
+    def check_reset(token: str) -> dict:
+        """Lets the reset screen show a form or a dead-link message before asking for a
+        password. Never 404s — a valid/invalid answer is all the caller gets."""
+        hit = _live_reset(token)
+        if not hit:
+            return {"valid": False, "email": None}
+        return {"valid": True, "email": _mask_email(hit["email"])}
+
+    @r.post("/reset")
+    def perform_reset(body: PasswordReset, resp: Response) -> Me:
+        hit = _live_reset(body.token)
+        if not hit:
+            raise HTTPException(400, "this reset link is invalid or has expired")
+        _check_password(body.new_password)
+        with engine.begin() as c:
+            c.execute(text("UPDATE users SET password_hash = :p WHERE id = :i"),
+                      {"p": _ph.hash(body.new_password), "i": hit["user_id"]})
+            # Single use, and every sibling link dies with it.
+            c.execute(text("UPDATE password_resets SET used_at = now() "
+                           "WHERE user_id = :i AND used_at IS NULL"), {"i": hit["user_id"]})
+        log.warning("password reset completed", extra={"user_id": hit["user_id"]})
+        # Sign them straight in: they have just proved control of the link and set the
+        # password, so a second trip through the login form buys nothing.
+        _issue(resp, hit["user_id"], hit["email"])
+        return _me(hit["user_id"])
 
     @r.get("/credentials")
     def get_credentials(uid: int = Depends(user_id_dep)) -> dict:

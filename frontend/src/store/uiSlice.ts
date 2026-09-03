@@ -25,7 +25,9 @@ const systemTheme = (): Theme =>
 
 const initialState: UiState = {
   tradeStatus: "all", gateFilter: "all", autoRefresh: true,
-  lang: (ls("lang") as Lang) ?? "en", mode: (ls("mode") as Mode) ?? "demo",
+  // Real is the default: the account that matters is the funded one, and the demo view
+  // is seeded simulation. A stored preference still wins.
+  lang: (ls("lang") as Lang) ?? "en", mode: (ls("mode") as Mode) ?? "real",
   theme: (ls("theme") as Theme) ?? systemTheme(),
 };
 

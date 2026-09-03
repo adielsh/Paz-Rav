@@ -4,25 +4,45 @@ import { useAppDispatch } from "../store/hooks";
 import { toggleLang } from "../store/uiSlice";
 import { api } from "../store/api";
 
+type Mode = "login" | "register" | "forgot" | "reset";
+
+/** A reset link is just `/?reset=<token>` — read it once, before anything renders. */
+export function resetTokenFromUrl(): string | null {
+  try {
+    return new URLSearchParams(window.location.search).get("reset");
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Sign-in / first-run setup.
+ * Sign-in / first-run setup, plus the two password-recovery steps.
  *
  * Split layout: the strategy's own payoff profile on the left, the form on the right. The
  * first account created becomes the owner; whether further accounts can be opened is a
  * server decision (ALLOW_SIGNUP), so this screen asks rather than guessing.
+ *
+ * Recovery lives here rather than on its own route because App only ever renders this
+ * component when there is no session — a separate route would be unreachable.
  */
 export default function Login() {
   const { t } = useT();
   const dispatch = useAppDispatch();
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const token = resetTokenFromUrl();
+  const [mode, setMode] = useState<Mode>(token ? "reset" : "login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [name, setName] = useState("");
   const [reveal, setReveal] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [firstRun, setFirstRun] = useState(false);
   const [signupOpen, setSignupOpen] = useState(true);
+  const [sent, setSent] = useState(false);
+  // null = still checking the token; the reset form waits rather than flashing a field
+  // that may be attached to a dead link.
+  const [linkFor, setLinkFor] = useState<{ valid: boolean; email: string | null } | null>(null);
 
   useEffect(() => {
     fetch("/api/auth/status", { credentials: "include" })
@@ -30,21 +50,51 @@ export default function Login() {
       .then((s) => {
         setFirstRun(s.users === 0);
         setSignupOpen(!!s.signup_open);
-        if (s.users === 0) setMode("register");
+        if (s.users === 0 && !token) setMode("register");
       })
       .catch(() => { /* server unreachable — the submit will report it */ });
-  }, []);
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    fetch(`/api/auth/reset?token=${encodeURIComponent(token)}`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((d) => setLinkFor({ valid: !!d.valid, email: d.email ?? null }))
+      .catch(() => setLinkFor({ valid: false, email: null }));
+  }, [token]);
+
+  const go = (next: Mode) => { setMode(next); setErr(null); setSent(false); };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErr(null); setBusy(true);
     try {
-      const r = await fetch(`/api/auth/${mode}`, {
+      if (mode === "forgot") {
+        // The server answers the same whether or not the address is registered, so the
+        // screen must not imply a lookup happened either.
+        await fetch("/api/auth/forgot", {
+          method: "POST", credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+        });
+        setSent(true);
+        return;
+      }
+      if (mode === "reset" && password !== confirm) {
+        setErr(t("auth_reset_mismatch"));
+        return;
+      }
+
+      const url = mode === "reset" ? "/api/auth/reset" : `/api/auth/${mode}`;
+      const payload =
+        mode === "reset" ? { token, new_password: password }
+        : mode === "register" ? { email, password, display_name: name || null }
+        : { email, password };
+
+      const r = await fetch(url, {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(mode === "register"
-          ? { email, password, display_name: name || null }
-          : { email, password }),
+        body: JSON.stringify(payload),
       });
       if (!r.ok) {
         const body = await r.json().catch(() => ({}));
@@ -55,6 +105,8 @@ export default function Login() {
       }
       // Anything cached under a previous session belongs to a different user.
       dispatch(api.util.resetApiState());
+      // Drop the token from the address bar: it is spent, and it should not survive in
+      // history or get pasted somewhere with the rest of the URL.
       window.location.replace("/");
     } catch {
       setErr(t("auth_unreachable"));
@@ -62,6 +114,8 @@ export default function Login() {
       setBusy(false);
     }
   };
+
+  const deadLink = mode === "reset" && linkFor !== null && !linkFor.valid;
 
   return (
     <div className="auth">
@@ -83,10 +137,10 @@ export default function Login() {
         <footer className="auth-specs">
           <span className="lbl">{t("auth_specs")}</span>
           <ul>
-            <li><b>40</b><i>DTE</i></li>
-            <li><b>Δ.30/.20</b><i>{t("auth_spec_delta")}</i></li>
-            <li><b>50</b><i>{t("auth_spec_wing")}</i></li>
-            <li><b>25</b><i>{t("auth_spec_stop")}</i></li>
+            <li><b>IBKR</b><i>{t("auth_spec_broker")}</i></li>
+            <li><b>SPXW</b><i>{t("auth_spec_instrument")}</i></li>
+            <li><b>{t("auth_spec_manual_v")}</b><i>{t("auth_spec_manual")}</i></li>
+            <li><b>{t("auth_spec_log_v")}</b><i>{t("auth_spec_log")}</i></li>
           </ul>
         </footer>
       </section>
@@ -100,23 +154,56 @@ export default function Login() {
         <form className="auth-form" onSubmit={submit}>
           {/* Sign in is always reachable. Hiding it on a fresh install produced a dead
               end: anyone who already had an account saw only "Create account". */}
-          <div className="auth-tabs" role="tablist">
-            <button type="button" role="tab" aria-selected={mode === "login"}
-              className={mode === "login" ? "on" : ""}
-              onClick={() => { setMode("login"); setErr(null); }}>
-              {t("auth_signin")}
-            </button>
-            {signupOpen && (
-              <button type="button" role="tab" aria-selected={mode === "register"}
-                className={mode === "register" ? "on" : ""}
-                onClick={() => { setMode("register"); setErr(null); }}>
-                {t("auth_create")}
+          {(mode === "login" || mode === "register") && (
+            <div className="auth-tabs" role="tablist">
+              <button type="button" role="tab" aria-selected={mode === "login"}
+                className={mode === "login" ? "on" : ""}
+                onClick={() => go("login")}>
+                {t("auth_signin")}
               </button>
-            )}
-          </div>
+              {signupOpen && (
+                <button type="button" role="tab" aria-selected={mode === "register"}
+                  className={mode === "register" ? "on" : ""}
+                  onClick={() => go("register")}>
+                  {t("auth_create")}
+                </button>
+              )}
+            </div>
+          )}
+
+          {(mode === "forgot" || mode === "reset") && (
+            <div className="auth-tabs" role="tablist">
+              <button type="button" role="tab" aria-selected className="on">
+                {mode === "forgot" ? t("auth_forgot_title") : t("auth_reset_title")}
+              </button>
+            </div>
+          )}
 
           {firstRun && mode === "register" && (
             <p className="auth-first-note">{t("auth_setup_lead")}</p>
+          )}
+
+          {mode === "forgot" && !sent && (
+            <p className="auth-first-note">{t("auth_forgot_lead")}</p>
+          )}
+
+          {/* Link created. There is no mailbox to point at, so point at the log. */}
+          {mode === "forgot" && sent && (
+            <div className="auth-ok" role="status">
+              <p>{t("auth_forgot_sent")}</p>
+              <p className="auth-where">{t("auth_forgot_where")}</p>
+              <code dir="ltr">docker compose logs api | grep "PASSWORD RESET LINK"</code>
+            </div>
+          )}
+
+          {mode === "reset" && linkFor === null && (
+            <p className="auth-first-note">{t("auth_reset_checking")}</p>
+          )}
+          {deadLink && <div className="auth-err" role="alert">{t("auth_reset_bad")}</div>}
+          {mode === "reset" && linkFor?.valid && (
+            <p className="auth-first-note">
+              {t("auth_reset_for")} <b dir="ltr">{linkFor.email}</b>
+            </p>
           )}
 
           {mode === "register" && (
@@ -127,31 +214,66 @@ export default function Login() {
             </label>
           )}
 
-          <label className="auth-field">
-            <span>{t("auth_email")}</span>
-            <input type="email" required value={email} autoComplete="email" dir="ltr"
-              onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
-          </label>
+          {mode !== "reset" && !(mode === "forgot" && sent) && (
+            <label className="auth-field">
+              <span>{t("auth_email")}</span>
+              <input type="email" required value={email} autoComplete="email" dir="ltr"
+                onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+            </label>
+          )}
 
-          <label className="auth-field">
-            <span>{t("auth_password")}</span>
-            <div className="auth-pw">
-              <input type={reveal ? "text" : "password"} required value={password} dir="ltr"
-                autoComplete={mode === "login" ? "current-password" : "new-password"}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={mode === "register" ? t("auth_password_rule") : ""} />
-              <button type="button" onClick={() => setReveal(!reveal)}
-                aria-label={reveal ? t("auth_hide") : t("auth_show")}>
-                {reveal ? <EyeOff /> : <Eye />}
-              </button>
-            </div>
-          </label>
+          {mode !== "forgot" && !deadLink && (mode !== "reset" || linkFor?.valid) && (
+            <label className="auth-field">
+              <span>{mode === "reset" ? t("auth_reset_new") : t("auth_password")}</span>
+              <div className="auth-pw">
+                <input type={reveal ? "text" : "password"} required value={password} dir="ltr"
+                  autoComplete={mode === "login" ? "current-password" : "new-password"}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={mode === "login" ? "" : t("auth_password_rule")} />
+                <button type="button" onClick={() => setReveal(!reveal)}
+                  aria-label={reveal ? t("auth_hide") : t("auth_show")}>
+                  {reveal ? <EyeOff /> : <Eye />}
+                </button>
+              </div>
+            </label>
+          )}
+
+          {mode === "reset" && linkFor?.valid && (
+            <label className="auth-field">
+              <span>{t("auth_reset_confirm")}</span>
+              <input type={reveal ? "text" : "password"} required value={confirm} dir="ltr"
+                autoComplete="new-password" onChange={(e) => setConfirm(e.target.value)} />
+            </label>
+          )}
+
+          {mode === "login" && (
+            <button type="button" className="auth-link" onClick={() => go("forgot")}>
+              {t("auth_forgot_link")}
+            </button>
+          )}
 
           {err && <div className="auth-err" role="alert">{err}</div>}
 
-          <button className="auth-go" type="submit" disabled={busy}>
-            {busy ? t("auth_working") : mode === "login" ? t("auth_signin") : t("auth_create")}
-          </button>
+          {!(mode === "forgot" && sent) && !deadLink && (mode !== "reset" || linkFor?.valid) && (
+            <button className="auth-go" type="submit" disabled={busy}>
+              {busy ? t("auth_working")
+                : mode === "login" ? t("auth_signin")
+                : mode === "register" ? t("auth_create")
+                : mode === "forgot" ? t("auth_forgot_go")
+                : t("auth_reset_go")}
+            </button>
+          )}
+
+          {(mode === "forgot" || mode === "reset") && (
+            <button type="button" className="auth-link"
+              onClick={() => {
+                // A spent or dead token in the URL would drop us straight back here.
+                if (token) window.location.replace("/");
+                else go("login");
+              }}>
+              {t("auth_back_signin")}
+            </button>
+          )}
 
           <p className="auth-note">{t("auth_privacy")}</p>
         </form>

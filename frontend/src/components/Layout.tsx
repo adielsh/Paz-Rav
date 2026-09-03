@@ -7,12 +7,13 @@ import { useT } from "../i18n/useT";
 import type { TKey } from "../i18n/translations";
 import KillSwitch from "./KillSwitch";
 import UserMenu from "./UserMenu";
+import ChatBot from "./ChatBot";
 
 type NavItem = { to: string; key: TKey; ic: string; end?: boolean };
 // One menu for both modes: the sidebar is navigation, not a mode-dependent surface. Hiding
 // items in "real" mode meant switching modes silently moved the goalposts.
 const NAV: NavItem[] = [
-  { to: "/", key: "nav_overview", ic: "◧", end: true },
+  { to: "/overview", key: "nav_overview", ic: "◧" },
   { to: "/real", key: "nav_real", ic: "◪" },
   { to: "/approvals", key: "nav_proposals", ic: "✓" },
   { to: "/analytics", key: "nav_analytics", ic: "▤" },
@@ -22,10 +23,10 @@ const NAV: NavItem[] = [
   { to: "/gates", key: "nav_gates", ic: "⚑" },
   { to: "/settings", key: "nav_settings", ic: "⚙" },
 ];
-const DEFAULT_ROUTE: Record<Mode, string> = { real: "/real", demo: "/" };
+const DEFAULT_ROUTE: Record<Mode, string> = { real: "/real", demo: "/overview" };
 
 const TITLE: Record<string, TKey> = {
-  "/": "title_overview", "/real": "title_real", "/analytics": "title_analytics",
+  "/overview": "title_overview", "/real": "title_real", "/analytics": "title_analytics",
   "/account": "title_account", "/positions": "title_positions",
   "/trades": "title_trades", "/gates": "title_gates", "/approvals": "title_proposals",
   "/settings": "title_settings",
@@ -122,6 +123,8 @@ export default function Layout() {
         </header>
         <div className="content"><Outlet /></div>
       </div>
+      {/* Floats above every routed page — the question is usually about what is on screen. */}
+      <ChatBot />
     </div>
   );
 }

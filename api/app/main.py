@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import create_engine, text
 
-from . import auth, ib_bridge, flex
+from . import auth, chat, ib_bridge, flex
 
 DB_DSN = os.getenv("DB_DSN", "postgresql+psycopg://condor:condor@127.0.0.1:5432/condor")
 engine = create_engine(DB_DSN, future=True, pool_pre_ping=True)
@@ -75,6 +75,9 @@ app.add_middleware(
 app.include_router(auth.build_router(engine, USER_ID))
 app.include_router(ib_bridge.router)
 app.include_router(flex.build_router(USER_CREDS))
+# The assistant reads the same two sources the console renders — Postgres and this user's
+# cached Flex statement — and is handed them as an already-computed snapshot.
+app.include_router(chat.build_router(engine, USER_ID, USER_CREDS, flex._user_cache_read))
 
 
 def _rows(sql: str, **params) -> list[dict]:
