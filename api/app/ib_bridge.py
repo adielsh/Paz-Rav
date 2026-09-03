@@ -180,7 +180,20 @@ async def executions() -> dict:
 
 @router.get("/orders")
 async def orders() -> dict:
-    """Open orders + recently completed orders."""
+    """Open orders + recently completed orders.
+
+    Time-bounded like current_nav_pnl(): these two IB requests can hang indefinitely when
+    the gateway is mid re-auth, and because they hold the shared lock a single hung call
+    took every other /ib/* endpoint down with it.
+    """
+    try:
+        return await asyncio.wait_for(_orders(), timeout=14)
+    except (asyncio.TimeoutError, Exception) as e:      # noqa: BLE001 - degrade gracefully
+        log.warning("orders request failed: %s", e)
+        return {"connected": False, "open": [], "completed": []}
+
+
+async def _orders() -> dict:
     async with _lock:
         if not await _ensure():
             return {"connected": False, "open": [], "completed": []}

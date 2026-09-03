@@ -20,13 +20,18 @@ import urllib.request
 import urllib.parse
 import xml.etree.ElementTree as ET
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy import create_engine, text
 
 log = logging.getLogger("flex")
 
 BASE = "https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService"
 CACHE_TTL = 1800           # seconds; Flex is rate-limited, don't hammer it
+
+# Users currently being refreshed in the background, so overlapping page loads don't fire
+# several statement requests at once — IBKR throttles that hard, and a throttled fetch
+# takes minutes instead of seconds.
+_refreshing: set[int] = set()
 
 
 # Durable cache in Postgres so the big statement survives api restarts (and Flex is rarely hit).
@@ -201,6 +206,23 @@ def _user_cache_write(user_id: int, payload: dict) -> None:
         log.warning("flex user cache write failed", extra={"error": str(e)})
 
 
+def _refresh_user(user_id: int, token: str, query_id: str) -> None:
+    """Fetch and re-cache one user's statement. Runs after the response has been sent."""
+    if user_id in _refreshing:
+        return
+    _refreshing.add(user_id)
+    try:
+        result = _fetch(token, query_id)
+        if result.get("ok"):
+            _user_cache_write(user_id, result)
+        else:
+            log.warning("Flex background refresh rejected: %s", result.get("error"))
+    except Exception as e:              # noqa: BLE001 - a refresh must never break a request
+        log.warning("Flex background refresh failed: %s", e)
+    finally:
+        _refreshing.discard(user_id)
+
+
 def build_router(creds_dep):
     """Built with the credentials dependency injected, so FastAPI can resolve it at
     definition time and this module stays independent of the auth implementation."""
@@ -211,7 +233,15 @@ def build_router(creds_dep):
         return {"configured": bool(creds.get("flex_token") and creds.get("flex_query_id"))}
 
     @router.get("/data")
-    def data(refresh: bool = False, creds: dict = Depends(creds_dep)) -> dict:
+    def data(bg: BackgroundTasks, refresh: bool = False,
+             creds: dict = Depends(creds_dep)) -> dict:
+        """Stale-while-revalidate.
+
+        A statement is ~30 MB and takes ten seconds on a good day, far longer when IBKR
+        throttles. Blocking the page on that made it look empty, so anything already
+        cached is served immediately and refreshed behind the response. Only a user with
+        no cached statement at all — or one who explicitly asked to refresh — waits.
+        """
         token, query_id = creds.get("flex_token"), creds.get("flex_query_id")
         uid = creds["user_id"]
         if not (token and query_id):
@@ -221,12 +251,16 @@ def build_router(creds_dep):
         now = time.time()
         if not refresh:
             cached = _user_cache_read(uid)
-            if cached and now - cached[0] < CACHE_TTL:
+            if cached:
+                if now - cached[0] >= CACHE_TTL:
+                    bg.add_task(_refresh_user, uid, token, query_id)
                 return cached[1]
         try:
             result = _fetch(token, query_id)
         except Exception as e:              # network / parse failure
-            log.warning("Flex fetch failed", extra={"error": str(e), "user_id": uid})
+            # The message itself carries the error: extra={} is invisible under the
+            # default log configuration, which made this line useless to debug.
+            log.warning("Flex fetch failed for user %s: %s", uid, e)
             result = {"configured": True, "ok": False, "error": str(e), "trades": []}
         if result.get("ok"):
             _user_cache_write(uid, result)
