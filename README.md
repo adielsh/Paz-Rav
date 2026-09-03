@@ -80,9 +80,15 @@ Every gate decision — pass or reject — is persisted with its inputs, so you 
 | `frontend` | `condor-frontend` | **8080** | Web console |
 | `loki`/`promtail`/`grafana` | `condor-*` | 3000 | Structured log aggregation |
 
-**The API cannot trade.** It only reads the database and flips status columns. The daemon owns
-the broker connection and re-validates everything before transmitting. That separation is
-deliberate: a bug in the web layer can never move money.
+**The API cannot trade.** It only reads the database and flips status columns, and its IB
+connection is opened with `readonly=True`, so IBKR itself rejects any order request from it — the
+property is enforced by the protocol, not merely by which functions the code happens to call. The
+daemon owns the trading connection and re-validates everything before transmitting. That
+separation is deliberate: a bug in the web layer can never move money.
+
+What the console *can* do is approve a parked proposal, which is what later causes the daemon to
+transmit. With `PLACE_ORDERS=1` that button is live; with `PLACE_ORDERS=0` an approval is recorded
+as "dry-run — order not transmitted".
 
 ---
 
@@ -185,12 +191,30 @@ A bot button in the corner of every page opens a chat about whatever is on scree
 has the real account actually made", "which underlyings do I trade most", "why hasn't the bot
 opened a position".
 
-It is grounded, not chatty. The server builds a snapshot of your account — counts, totals,
-per-underlying and per-month aggregates, the NAV curve's extremes, the most recent fills — all
-computed in Python from Postgres and the cached Flex statement, then hands it to Claude with one
-standing instruction: **never produce a number that is not already in the snapshot.** Ask for a
-figure the snapshot doesn't hold and it says so instead of estimating. That keeps the project's
-core rule intact — the model reads numbers, it never calculates them.
+It is grounded, not chatty. Two layers feed it, and neither lets the model do arithmetic.
+
+An **overview snapshot** rides with every message — counts, totals, per-underlying and per-month
+aggregates, the NAV curve's extremes, recent fills — all computed in Python from Postgres and the
+cached Flex statement.
+
+Three **tools** then reach the *complete* statement, every fill and every NAV day:
+`search_fills` (filter by symbol, date, expiry, leg, side), `aggregate_fills` (group by
+underlying, month, day, expiry, …) and `nav_history`. Each one runs the filter and the sums here,
+in Python, and returns the finished figures. `search_fills` reports `matched` and `totals` over
+*every* row that matched alongside a sample, precisely so the model quotes the real total rather
+than counting the sample.
+
+That shape is deliberate. Handing over 3,000 raw rows and asking for a total is exactly where a
+language model produces a confident wrong number; giving it a filter and a server-computed sum is
+not. The standing instruction is **never produce a number yourself** — if you are about to add,
+count or rank, call a tool instead. Ask for something the data cannot answer and it says so rather
+than estimating.
+
+Verified against ground truth computed straight from the raw statement: the worst single fill
+(−84,283.50 on SPXW 260605P07560000), AAPL's 16 fills and +45.00 realized, April 2026 as the worst
+month at −13,417.66 over 231 fills, 20 January as the busiest day at 114 fills, and zero SPX puts
+in November 2025 reported as zero rather than reinterpreted. Answers name the filter they used and
+the response carries `tools_used`, so an answer can be checked instead of trusted.
 
 It also has to name its source. Seeded demo rows, the real IBKR statement, and the paper gateway
 are three separate blocks in the snapshot, each flagged, and the model is told never to blend

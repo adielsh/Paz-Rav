@@ -47,8 +47,13 @@ async def _ensure() -> bool:
     cid = _CLIENT_IDS[_ci % len(_CLIENT_IDS)]
     _ci += 1
     try:
+        # readonly=True makes "the API cannot trade" an enforced property of the connection
+        # rather than a convention this module happens to follow. IBKR rejects any order
+        # request on a read-only client, so a future bug in the web layer cannot place one
+        # even by accident. The daemon connects separately, without this flag.
         await asyncio.wait_for(
-            _ib.connectAsync(IB_HOST, IB_PORT, clientId=cid, timeout=8), timeout=10)
+            _ib.connectAsync(IB_HOST, IB_PORT, clientId=cid, timeout=8, readonly=True),
+            timeout=10)
         log.info("ib_bridge connected", extra={"account": _ib.managedAccounts(), "clientId": cid})
         return True
     except Exception as e:
