@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SPX Condor — Ops Dashboard</title>
+<style>
+  :root { --bg:#0f1419; --panel:#1a2029; --line:#2a323d; --fg:#e6edf3; --muted:#8b98a5;
+          --green:#2ea043; --red:#da3633; --amber:#d29922; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif; }
+  header { display:flex; align-items:center; justify-content:space-between; gap:1rem;
+           padding:1rem 1.5rem; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  h1 { font-size:1.1rem; margin:0; font-weight:600; }
+  .muted { color:var(--muted); }
+  main { padding:1.5rem; display:grid; gap:1.5rem; max-width:1200px; margin:0 auto; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:1rem; }
+  .tile { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:1rem; }
+  .tile .v { font-size:1.6rem; font-weight:600; margin-top:.25rem; }
+  section h2 { font-size:.95rem; margin:0 0 .5rem; font-weight:600; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { text-align:left; padding:.5rem .75rem; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th { color:var(--muted); font-weight:500; }
+  tr:last-child td { border-bottom:0; }
+  .pill { padding:.15rem .5rem; border-radius:999px; font-size:12px; font-weight:600; }
+  .ok { background:rgba(46,160,67,.15); color:var(--green); }
+  .bad { background:rgba(218,54,51,.15); color:var(--red); }
+  button { font:inherit; font-weight:600; border:0; border-radius:6px; padding:.5rem 1rem;
+           cursor:pointer; color:#fff; }
+  .kill { background:var(--red); } .enable { background:var(--green); }
+  .switch { display:flex; align-items:center; gap:.75rem; }
+  .empty { padding:1rem; color:var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <div><h1>SPX Condor — Ops Dashboard</h1>
+    <div class="muted" id="updated">loading…</div></div>
+  <div class="switch">
+    <span>Trading: <span id="ctrlState" class="pill">…</span></span>
+    <button id="killBtn" class="kill">Loading…</button>
+  </div>
+</header>
+<main>
+  <div class="tiles">
+    <div class="tile"><div class="muted">Open positions</div><div class="v" id="tOpen">–</div></div>
+    <div class="tile"><div class="muted">Realized P&L</div><div class="v" id="tPnl">–</div></div>
+    <div class="tile"><div class="muted">Closed trades</div><div class="v" id="tClosed">–</div></div>
+    <div class="tile"><div class="muted">Gate rejects (recent)</div><div class="v" id="tRej">–</div></div>
+  </div>
+
+  <section><h2>Open positions</h2><div class="panel"><div id="positions" class="empty">…</div></div></section>
+  <section><h2>Recent gate decisions</h2><div class="panel"><div id="gates" class="empty">…</div></div></section>
+  <section><h2>Recent trades</h2><div class="panel"><div id="trades" class="empty">…</div></div></section>
+</main>
+
+<script>
+const API = "/api";
+const fmt = v => v==null ? "" : v;
+const money = v => (v==null?0:Number(v)).toLocaleString(undefined,{style:"currency",currency:"USD"});
+
+async function get(path){ const r = await fetch(API+path); if(!r.ok) throw new Error(path); return r.json(); }
+
+function table(rows, cols){
+  if(!rows || !rows.length) return '<div class="empty">None</div>';
+  const head = cols.map(c=>`<th>${c.label}</th>`).join("");
+  const body = rows.map(r=>"<tr>"+cols.map(c=>`<td>${c.render?c.render(r[c.key],r):fmt(r[c.key])}</td>`).join("")+"</tr>").join("");
+  return `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+const acc = v => v ? '<span class="pill ok">PASS</span>' : '<span class="pill bad">REJECT</span>';
+
+async function refresh(){
+  try {
+    const [pos, gates, trades, pnl, ctrl] = await Promise.all([
+      get("/positions"), get("/gate-decisions?limit=25"), get("/trades?limit=25"),
+      get("/pnl"), get("/control")]);
+
+    document.getElementById("tOpen").textContent = pos.length;
+    document.getElementById("tPnl").textContent = money(pnl.total);
+    document.getElementById("tClosed").textContent = pnl.closed;
+    document.getElementById("tRej").textContent = gates.filter(g=>!g.accepted).length;
+
+    document.getElementById("positions").innerHTML = table(pos, [
+      {key:"created_at",label:"Opened"},{key:"expiry",label:"Expiry"},{key:"dte",label:"DTE"},
+      {key:"put_long_strike",label:"P long"},{key:"put_short_strike",label:"P short"},
+      {key:"call_short_strike",label:"C short"},{key:"call_long_strike",label:"C long"},
+      {key:"entry_credit",label:"Credit"},{key:"status",label:"Status"}]);
+    document.getElementById("gates").innerHTML = table(gates, [
+      {key:"created_at",label:"Time"},{key:"vix",label:"VIX"},
+      {key:"accepted",label:"Result",render:acc},{key:"reason",label:"Reason"}]);
+    document.getElementById("trades").innerHTML = table(trades, [
+      {key:"created_at",label:"Time"},{key:"expiry",label:"Expiry"},{key:"entry_credit",label:"Credit"},
+      {key:"quantity",label:"Qty"},{key:"status",label:"Status"}]);
+
+    const on = ctrl.trading_enabled;
+    const st = document.getElementById("ctrlState");
+    st.textContent = on ? "ENABLED" : "DISABLED"; st.className = "pill "+(on?"ok":"bad");
+    const btn = document.getElementById("killBtn");
+    btn.textContent = on ? "KILL SWITCH" : "Re-enable trading";
+    btn.className = on ? "kill" : "enable";
+    btn.onclick = async () => {
+      if(on && !confirm("Disable trading? The daemon will skip new entries.")) return;
+      await fetch(API+"/control",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({trading_enabled:!on, updated_by:"dashboard"})});
+      refresh();
+    };
+    document.getElementById("updated").textContent = "updated "+new Date().toLocaleTimeString();
+  } catch(e){ document.getElementById("updated").textContent = "API unreachable"; }
+}
+refresh(); setInterval(refresh, 15000);
+</script>
+</body>
+</html>
