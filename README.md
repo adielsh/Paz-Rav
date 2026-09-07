@@ -70,6 +70,14 @@ Nothing here ever places or closes an order. Every fill is yours, at your broker
 ## Learn more
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — how it's put together and why.
+- [`docs/MONOREPO.md`](docs/MONOREPO.md) — the two halves, the shared database, and what
+  is not merged yet.
 - [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — running it, for real and for development.
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — what's done, what's next, what we actually know.
 - [`CLAUDE.md`](CLAUDE.md) — day-to-day notes for AI coding agents in this repo.
+
+## Disclaimer
+
+This project is provided as is, without warranty of any kind, and is **not investment advice**.
+It was built for my own research and use. Options trading carries substantial risk of loss - you
+are solely responsible for anything this software does with your account. Use at your own risk.
