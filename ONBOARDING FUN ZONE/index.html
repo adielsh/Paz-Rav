@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>פז רב — אזור הכיף 🎮</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@500;700;900&family=Heebo:wght@400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="floaties" aria-hidden="true">
+  <span style="--x:8%;  --d:26s; --s:2.2rem">📈</span>
+  <span style="--x:22%; --d:31s; --s:1.6rem">🪙</span>
+  <span style="--x:41%; --d:23s; --s:1.9rem">🧠</span>
+  <span style="--x:63%; --d:34s; --s:1.5rem">🐍</span>
+  <span style="--x:79%; --d:27s; --s:2.0rem">💹</span>
+  <span style="--x:92%; --d:30s; --s:1.7rem">⚖️</span>
+</div>
+
+<header class="top">
+  <button id="home-btn" class="logo" title="למסך הבית">🎮 <b>פז רב</b> · אזור הכיף</button>
+  <div class="hud">
+    <span class="pill stars-pill" title="סך הכוכבים שאספתם">⭐ <b id="hud-stars">0</b></span>
+    <span class="pill xp-pill" title="נקודות ניסיון">⚡ <b id="hud-xp">0</b> XP</span>
+    <button id="map-btn" class="pill nav-pill" title="למפת העולמות">🗺️ מפה</button>
+    <button id="mute-btn" class="pill nav-pill" title="הפעלה/כיבוי צלילים">🔊</button>
+  </div>
+</header>
+
+<main id="screen"></main>
+
+<footer class="foot">
+  נבנה באהבה מתוך <code>docs/ARCHITECTURE.md</code> · <code>docs/ROADMAP.md</code> · <code>README.md</code> —
+  כשמסיימים את המסע, זה המקום להמשיך אליו 📚
+</footer>
+
+<script src="game.js"></script>
+</body>
+</html>
