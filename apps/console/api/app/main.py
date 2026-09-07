@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import create_engine, text
 
-from . import auth, chat, ib_bridge, flex
+from . import auth, chat, engine_proxy, ib_bridge, flex
 
 DB_DSN = os.getenv("DB_DSN", "postgresql+psycopg://condor:condor@127.0.0.1:5432/condor")
 engine = create_engine(DB_DSN, future=True, pool_pre_ping=True)
@@ -107,6 +107,7 @@ async def lifespan(app: FastAPI):
     await ib_bridge.startup()      # best-effort connect to the paper gateway (read-only)
     yield
     await ib_bridge.shutdown()
+    await engine_proxy.shutdown()
 
 
 app = FastAPI(title="SPX Condor API", version="0.1.0", lifespan=lifespan)
@@ -125,6 +126,9 @@ app.include_router(flex.build_router(USER_CREDS))
 # cached Flex statement — and is handed them as an already-computed snapshot.
 app.include_router(chat.build_router(engine, USER_ID, USER_CREDS, flex._user_cache_read,
                                     lambda uid: uid == _owner_id()))
+# The Paz Rav strategy engine, read-only and behind this session. It is advisory: no
+# broker connection, no order path — see engine_proxy's module docstring.
+app.include_router(engine_proxy.build_router(USER_ID))
 
 
 def _rows(sql: str, **params) -> list[dict]:

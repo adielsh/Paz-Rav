@@ -1,94 +1,289 @@
-# Local infrastructure for Paz Rav — the two datastores the modular monolith needs.
-# `docker compose up -d` gives you Postgres (durable state) + Redis (hot state / pub-sub).
+# Paz Rav — the whole system, one command:  docker compose up -d --build
+#
+# Two halves that now share a repo, a network and a database:
+#
+#   THE CONSOLE (apps/console/)  the SPX condor trading platform. Talks to IBKR,
+#                                places real orders, holds the user accounts, and
+#                                serves the web UI you actually open.
+#   THE ENGINE   (src/paz_rav/)  the multi-underlying strategy engine. Scans, ranks
+#                                and reasons about candidates. Advisory only -- it has
+#                                no broker connection and no route that places an order.
+#
+# Open http://127.0.0.1:8080 for the console.  Every port binds to 127.0.0.1 only.
+# Credentials live in .env (git-ignored). Copy .env.example to start.
+
+# Pinned so the volume/network names do not follow the directory name. Compose derives
+# the project from the folder otherwise, which -- when this repo absorbed the console --
+# would have silently pointed `condor-pgdata` at a NEW, empty volume and looked exactly
+# like the database had been wiped. Do not remove this.
+name: pazrav
+
 services:
-  postgres:
-    # pgvector/pgvector is a drop-in superset of the official postgres:16 image — same
-    # PGDATA, env vars and wire protocol — that ships the `vector` extension the
-    # close-timing case memory uses (store/postgres_case_memory.py). Swapping back to
-    # postgres:16 just makes case memory fall back to in-memory; nothing else changes.
-    image: pgvector/pgvector:pg16
+  # ---------------------------------------------------------------- broker gateway --
+  # Headless IBKR paper gateway with auto-login via IBC.
+  # Image: gnzsnz/ib-gateway (bundles IB Gateway + IBC). Paper API on 4002.
+  ib-gateway:
+    image: ghcr.io/gnzsnz/ib-gateway:stable
+    container_name: ibgw-paper
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: paz
-      POSTGRES_PASSWORD: paz
-      POSTGRES_DB: pazrav
+      TWS_USERID: ${TWS_USERID}
+      TWS_PASSWORD: ${TWS_PASSWORD}
+      TRADING_MODE: paper
+      READ_ONLY_API: "no"            # must be "no" so we can place paper orders
+      BYPASS_WARNING: "yes"
+      AUTO_RESTART_TIME: "11:00 PM"   # daily IBKR-mandated re-auth window (ET)
+      TIME_ZONE: America/New_York
+      # Auto-accept the API connection from the host without a manual popup.
+      TWS_ACCEPT_INCOMING: accept
     ports:
-      - "5432:5432"
+      # Bind to localhost only — do not expose the API to the network.
+      # Host 4002 -> container 4004: inside the container the gateway API binds to
+      # 127.0.0.1:4002 (loopback only) and socat re-exposes it on 4004. We must target
+      # the socat port, not the gateway's loopback port.
+      - "127.0.0.1:4002:4004"        # paper API (host 4002 -> socat 4004 -> gw 4002)
+      - "127.0.0.1:5900:5900"        # VNC (optional: watch the gateway UI)
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - ./apps/console/ibgw-settings:/root/Jts   # persist TWS settings between restarts
+    networks: [condor]
+
+  # ------------------------------------------------------------------- datastores --
+  # pgvector/pgvector:pg16 is a drop-in superset of postgres:16 — same PGDATA layout,
+  # same wire protocol — that ships the `vector` extension the engine's case memory
+  # needs. The existing condor-pgdata volume mounts unchanged.
+  #
+  # ONE database, TWO schemas: the console's tables stay in `public`; the engine's land
+  # in `engine` via the `paz` role's default search_path (infra/postgres/init/).
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: condor-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: condor
+      POSTGRES_PASSWORD: condor
+      POSTGRES_DB: condor
+    ports:
+      - "127.0.0.1:5432:5432"         # localhost only (for inspection / the api service)
+    volumes:
+      - condor-pgdata:/var/lib/postgresql/data
+      # Runs automatically ONLY on a fresh volume. On an existing database apply it once:
+      #   docker compose exec postgres psql -U condor -d condor \
+      #     -f /docker-entrypoint-initdb.d/10-engine-schema.sql
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U paz -d pazrav"]
+      test: ["CMD-SHELL", "pg_isready -U condor"]
       interval: 5s
       timeout: 3s
       retries: 10
+    networks: [condor]
 
+  # Hot state + pub/sub for the engine (features, IV history, the UI bus).
   redis:
     image: redis:7-alpine
+    container_name: condor-redis
+    restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
-      - redisdata:/data
+      - condor-redisdata:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
+    networks: [condor]
 
-  # The AI close-timing debate, extracted as its OWN deployable — the one part of the AI
-  # layer with a real trigger to scale separately (it's slow + LLM-bound). Same image as
-  # the app, different entrypoint. The app calls it over HTTP and falls back in-process if
-  # it's down (a small circuit breaker in agents/close_advisor.py), so this stays a truly
-  # optional, independently-deployable microservice — not a hard dependency.
+  # ------------------------------------------------------------------ the console --
+  # THE DAEMON. The only service in this entire stack that can place an order.
+  trading-core:
+    build: ./apps/console/trading-core
+    container_name: condor-core
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ib-gateway:
+        condition: service_started
+    environment:
+      # Reach the gateway over the docker network via its socat port (4004).
+      IB_HOST: ib-gateway
+      IB_PORT: "4004"
+      IB_CLIENT_ID: "11"
+      DB_DSN: postgresql+psycopg://condor:condor@postgres:5432/condor
+      # SAFETY: dry-run by default. Set to "1" only after paper order flow is validated.
+      PLACE_ORDERS: ${PLACE_ORDERS:-0}
+      # SAFETY: human in the loop. A passing entry is parked in the UI for approval instead of
+      # being transmitted. Set to "0" only to hand the bot full automatic entry.
+      REQUIRE_APPROVAL: ${REQUIRE_APPROVAL:-1}
+      PROPOSAL_TTL_MINUTES: ${PROPOSAL_TTL_MINUTES:-120}
+      LOG_LEVEL: INFO
+      TZ: America/New_York
+    networks: [condor]
+
+  # The console's API. Reads the database, flips status columns, proxies read-only views
+  # of the broker and of the engine. It cannot trade — no route here reaches an order.
+  api:
+    build: ./apps/console/api
+    container_name: condor-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      engine:
+        condition: service_started   # loosely coupled: /engine/* degrades if it is down
+    environment:
+      DB_DSN: postgresql+psycopg://condor:condor@postgres:5432/condor
+      # The Paz Rav engine. The console frontend never calls it directly — this proxy is
+      # its only door, so engine data inherits the same session check as every other route.
+      ENGINE_URL: http://engine:8000
+      # IBKR Flex Web Service (real account statements). Set in .env.
+      FLEX_TOKEN: ${FLEX_TOKEN:-}
+      FLEX_QUERY_ID: ${FLEX_QUERY_ID:-}
+      # Signs sessions and encrypts each user's stored broker credentials.
+      APP_SECRET_KEY: ${APP_SECRET_KEY:?APP_SECRET_KEY must be set in .env}
+      ALLOW_SIGNUP: ${ALLOW_SIGNUP:-1}
+      SESSION_HOURS: ${SESSION_HOURS:-12}
+      # Base URL the password-reset link points at, and how long that link stays usable.
+      CONSOLE_URL: ${CONSOLE_URL:-http://127.0.0.1:8080}
+      RESET_TTL_MINUTES: ${RESET_TTL_MINUTES:-30}
+      COOKIE_SECURE: ${COOKIE_SECURE:-0}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://127.0.0.1:8080,http://localhost:8080}
+      # In-console assistant. Unset = the widget explains it is not configured and stops.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Only needed for an identity-linked key, which is rejected without it.
+      ANTHROPIC_WORKSPACE_ID: ${ANTHROPIC_WORKSPACE_ID:-}
+      CHAT_MODEL: ${CHAT_MODEL:-claude-opus-5}
+    ports:
+      - "127.0.0.1:8000:8000"         # localhost only
+    networks: [condor]
+
+  # THE UI. Vite + React + Redux Toolkit, served by nginx (proxies /api -> api).
+  frontend:
+    build: ./apps/console/frontend
+    container_name: condor-frontend
+    restart: unless-stopped
+    depends_on: [api]
+    ports:
+      - "127.0.0.1:8080:80"           # open http://127.0.0.1:8080
+    networks: [condor]
+
+  # Legacy lean dashboard (kept for reference / fallback).
+  dashboard:
+    build: ./apps/console/dashboard
+    container_name: condor-dashboard
+    restart: unless-stopped
+    depends_on: [api]
+    ports:
+      - "127.0.0.1:8081:80"           # open http://127.0.0.1:8081
+    networks: [condor]
+
+  # ------------------------------------------------------------------- the engine --
+  # The AI close-timing debate, its own deployable — the one part of the AI layer with a
+  # real trigger to scale separately (slow + LLM-bound). Same image as the engine,
+  # different entrypoint. The engine calls it over HTTP and falls back in-process if it
+  # is down (a small circuit breaker in agents/close_advisor.py).
   advisor:
     build: .
+    container_name: condor-advisor
+    restart: unless-stopped
     command: ["uvicorn", "paz_rav.services.advisor.app:app", "--host", "0.0.0.0", "--port", "8001"]
     environment:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
     ports:
-      - "8001:8001"
+      - "127.0.0.1:8001:8001"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 10s
       timeout: 5s
       retries: 6
+    networks: [condor]
 
-  # The engine + dashboard, containerized. `docker compose up -d --build` brings up the
-  # ENTIRE stack (DB + Redis + advisor + app) with one command — and this is the same image
-  # you'd push to ECR/App Runner/ECS later (docs/DEPLOYMENT.md).
-  app:
+  # The strategy engine + its own dashboard (the pre-merge Paz Rav UI, still served at
+  # :8010 until its pages are migrated into the console). ADVISORY ONLY: no broker
+  # connection, no order path.
+  #
+  # Its Firebase auth gate stays OFF (ALLOWED_EMAIL / FIREBASE_PROJECT_ID unset) because
+  # the console reaches it through an authenticated proxy. :8010 is unauthenticated and
+  # localhost-only — the same posture as Grafana on :3000.
+  engine:
     build: .
+    container_name: condor-engine
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       advisor:
-        condition: service_started   # loosely coupled: the app has an in-process fallback
+        condition: service_started   # loosely coupled: the engine has an in-process fallback
     environment:
       PAZ_PERSIST: redis_postgres
-      PAZ_DATA: ${PAZ_DATA:-fixture}
-      DATABASE_URL: postgresql://paz:paz@postgres:5432/pazrav
+      PAZ_DATA: ${PAZ_DATA:-yfinance}
+      # Same database as the console; the `paz` role's search_path puts these tables in
+      # the `engine` schema (infra/postgres/init/10-engine-schema.sql).
+      DATABASE_URL: postgresql://paz:paz@postgres:5432/condor
       REDIS_URL: redis://redis:6379/0
       ADVISOR_URL: http://advisor:8001
       UNDERLYINGS: ${UNDERLYINGS:-SPX,SPY,QQQ,IWM,NVDA,MSFT,GOOGL,AMZN,CSCO}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
-      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
-      ALLOWED_EMAIL: ${ALLOWED_EMAIL:-}
-      GMAIL_ADDRESS: ${GMAIL_ADDRESS:-}
-      GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD:-}
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8010:8000"         # was :8000 pre-merge; the console API owns that now
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s
       timeout: 5s
       retries: 6
+    networks: [condor]
+
+  # ---- Centralized logging: Promtail ships container logs -> Loki; Grafana to search ----
+  loki:
+    image: grafana/loki:3.0.0
+    container_name: condor-loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./apps/console/observability/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - condor-loki:/loki
+    networks: [condor]
+
+  promtail:
+    image: grafana/promtail:3.0.0
+    container_name: condor-promtail
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/promtail-config.yml
+    depends_on: [loki]
+    volumes:
+      - ./apps/console/observability/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro   # discover + read container logs
+    networks: [condor]
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: condor-grafana
+    restart: unless-stopped
+    depends_on: [loki]
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin        # change for anything non-local
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./apps/console/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - condor-grafana:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"           # open http://127.0.0.1:3000 (admin/admin)
+    networks: [condor]
+
+networks:
+  condor:
+    driver: bridge
 
 volumes:
-  pgdata:
-  redisdata:
+  condor-pgdata:
+  condor-redisdata:
+  condor-loki:
+  condor-grafana:

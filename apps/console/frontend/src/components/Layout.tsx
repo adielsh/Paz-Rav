@@ -15,6 +15,9 @@ type NavItem = { to: string; key: TKey; ic: string; end?: boolean };
 const NAV: NavItem[] = [
   { to: "/overview", key: "nav_overview", ic: "◧" },
   { to: "/real", key: "nav_real", ic: "◪" },
+  // The strategy engine sits before approvals because that is the order of the work:
+  // an idea is found, then a trade is approved. It feeds nothing automatically yet.
+  { to: "/ideas", key: "nav_ideas", ic: "◆" },
   { to: "/approvals", key: "nav_proposals", ic: "✓" },
   { to: "/analytics", key: "nav_analytics", ic: "▤" },
   { to: "/account", key: "nav_account", ic: "◈" },
@@ -29,6 +32,7 @@ const TITLE: Record<string, TKey> = {
   "/overview": "title_overview", "/real": "title_real", "/analytics": "title_analytics",
   "/account": "title_account", "/positions": "title_positions",
   "/trades": "title_trades", "/gates": "title_gates", "/approvals": "title_proposals",
+  "/ideas": "title_ideas",
   "/settings": "title_settings",
 };
 

@@ -172,8 +172,12 @@ def create_app(
 
     @app.get("/health")
     def health() -> dict:
+        # `data_source` is here so a consumer can label the numbers honestly rather than
+        # assuming they are live: the console proxies this route to caption its engine
+        # page, and "yfinance" means ~15-minute delayed quotes, not execution-grade ones.
         return {"status": "ok", "version": __version__,
-                "underlyings": underlyings, "strategies": list_strategies()}
+                "underlyings": underlyings, "strategies": list_strategies(),
+                "data_source": get_settings().paz_data}
 
     @app.get("/auth-config")
     def auth_config() -> dict:

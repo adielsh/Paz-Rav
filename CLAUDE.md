@@ -2,15 +2,40 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## What this is
+## What this is — a monorepo with two halves
+
+This repo holds two systems that share a database, a network and a broker vendor. Know
+which half you are in before you change anything.
+
+| | **The engine** — `src/paz_rav/` | **The console** — `apps/console/` |
+|---|---|---|
+| Job | Scans ~9 underlyings, ranks Iron Condor + DACS candidates, reasons about them | Trades one strategy (SPX iron condor) on IBKR for real |
+| Trades? | **No.** No broker connection, no order route. Advisory only | **Yes.** `trading-core` is the only service that can place an order |
+| UI | `web/` — its own dashboard, on :8010, pending migration | `apps/console/frontend/` — **the primary UI**, on :8080 |
+| Data | yfinance (delayed) or a fixture. `adapters/ibkr.py` is still a stub | Live IB gateway via `ib_async` |
+| DB schema | `engine` | `public` |
+| Guidance | this file | `apps/console/CLAUDE.md` |
+
+**The console frontend never calls the engine directly.** It goes through
+`apps/console/api/app/engine_proxy.py`, a read-only GET proxy that sits behind the console's
+session cookie — the engine's own Firebase gate is switched off precisely because that proxy
+is its only door. Don't add an nginx route around it.
+
+Ports (all bound to `127.0.0.1`): console **8080** · console API 8000 · engine 8010 ·
+advisor 8001 · Grafana 3000 · Postgres 5432 · Redis 6379.
+
+The rest of this file is about **the engine**. Full rationale lives in
+`docs/ARCHITECTURE.md`, running/deployment in `docs/DEPLOYMENT.md`, and phase status in
+`docs/ROADMAP.md` — read them before making architectural changes; this file only covers
+what you need to be productive day to day.
+
+### The engine, specifically
 
 Paz Rav — a real-time options strategy engine for **Iron Condor** and **DACS 1.0** (a
 diagonal adaptive calendar spread). It scans a fixed universe of underlyings, ranks
 candidate positions with a deterministic quant core, runs them through an AI judgment
 layer (Analyst + Critic + Explainer), and serves a live dashboard for opening/closing
-paper positions. Full rationale lives in `docs/ARCHITECTURE.md`, running/deployment in
-`docs/DEPLOYMENT.md`, and phase status in `docs/ROADMAP.md` — read them before making
-architectural changes; this file only covers what you need to be productive day to day.
+paper positions.
 
 **Core design rule, non-negotiable:** every greek, IV, price, POP, and P&L comes from
 deterministic Python (`src/paz_rav/quant/`, `analytics/`, `strategies/`, `backtest/`). LLMs
@@ -21,32 +46,58 @@ compute a number themselves. Don't blur this line when adding features.
 
 ### Run everything (recommended)
 ```bash
-docker compose up -d --build          # Postgres + Redis + the app, one command
-# → http://localhost:8000
+docker compose up -d --build          # the WHOLE monorepo, one command
+# → http://127.0.0.1:8080   the console (start here)
+# → http://127.0.0.1:8010   the engine's own dashboard
 ```
-Rebuild just the app after a backend or frontend change: `docker compose up -d --build app`.
-Uses `PAZ_DATA=fixture` by default (offline demo data); set `PAZ_DATA=yfinance` in the
-shell before `up` for live delayed quotes.
+There is exactly one `docker-compose.yml`, at the repo root — it drives both halves.
+Rebuild one service after a change: `docker compose up -d --build engine` (or `api`,
+`frontend`, `trading-core`).
+
+Two things about that compose file that will cost you an afternoon if you miss them:
+
+- **`name: pazrav` is pinned at the top.** Compose otherwise derives the project name from
+  the directory, and the volumes were created under a different one. Removing it points
+  `condor-pgdata` at a new, empty volume and looks exactly like the database was wiped.
+- **`infra/postgres/init/` only auto-runs on an empty data directory.** On an existing
+  database apply it by hand once:
+  `docker compose exec postgres psql -U condor -d condor -f /docker-entrypoint-initdb.d/10-engine-schema.sql`
+
+`PAZ_DATA` selects the engine's feed: `yfinance` (delayed, the default) or `fixture`
+(offline demo data).
 
 ### Backend (Python), running from source
 ```bash
 pip install -e ".[feeds,dev]"                    # core + free data feed + test tooling
 pip install -e ".[quant,agents]"                 # optional: numeric stack, AI layer deps
-python -m pytest                                 # full suite (pure, no infra/network)
+python -m pytest                                 # engine suite (pure, no infra/network)
 python -m pytest tests/test_dacs.py              # a single file
 python -m pytest tests/test_dacs.py::test_name   # a single test
 UNDERLYINGS=SPY uvicorn paz_rav.api.app:app --port 8000 --reload   # API only, in-memory stores
 ```
 `pyproject.toml` extras: `quant` (numpy/scipy/py_vollib/polars/duckdb — the pure-Python
 fallbacks in `quant/` mean tests never need these), `feeds` (yfinance/ib_async), `agents`
-(anthropic/langgraph/langfuse), `dev` (pytest/ruff/mypy/fakeredis).
+(anthropic/langgraph/langfuse), `dev` (pytest/ruff/mypy/fakeredis), `console` (only to run
+the console's suite from here).
+
+`python -m pytest` deliberately runs the **engine suite only** — it needs no infrastructure,
+no network and no extra installs, and that property is worth keeping. Both halves at once:
+```bash
+pip install -e ".[console]"
+python -m pytest tests apps/console/trading-core/tests    # 106 + 15
+```
 
 Real persistence instead of in-memory stores (needs `docker compose up -d` for Postgres/Redis first):
 ```bash
 PAZ_PERSIST=redis_postgres UNDERLYINGS=SPY,QQQ uvicorn paz_rav.api.app:app --port 8000
 ```
 
-### Frontend (web/)
+### Frontend
+
+Two of them. `apps/console/frontend/` is the primary UI — see `apps/console/CLAUDE.md`.
+`web/` below is the engine's own dashboard, still served by the engine on :8010 until its
+pages are migrated into the console.
+
 ```bash
 cd web && npm install
 npm run dev             # Vite dev server, proxies /api and /ws to :8000 (run the backend separately)
@@ -64,15 +115,24 @@ PYTHONPATH=src python scripts/make_fixture.py          # regenerate tests/fixtur
 ```
 
 ### Verifying a change end-to-end
-Don't trust `tsc`/`pytest` alone for anything touching the API or dashboard — rebuild and
+Don't trust `tsc`/`pytest` alone for anything touching an API or a dashboard — rebuild and
 curl it:
 ```bash
-docker compose up -d --build app
-curl -s http://localhost:8000/health
-curl -s "http://localhost:8000/api/top?n=5"
+docker compose up -d --build engine
+curl -s http://127.0.0.1:8010/health
+curl -s "http://127.0.0.1:8010/api/top?n=5"
+docker inspect --format='{{.State.Health.Status}}' condor-engine   # → healthy
 ```
-`docker inspect --format='{{.State.Health.Status}}' paz-rav-app-1` should read `healthy`
-(the image has a `HEALTHCHECK` hitting `/health`).
+If the change touches the console, do the same there — and check the engine page, which is
+the one surface that spans both halves:
+```bash
+docker compose up -d --build api frontend
+curl -s http://127.0.0.1:8000/health
+curl -s http://127.0.0.1:8000/engine/top      # → 401 without a session cookie
+```
+Then open http://127.0.0.1:8080 and walk the pages. **The regression that matters most:
+stop the engine (`docker compose stop engine`) and confirm every other page still works** —
+`/ideas` must show its offline state and nothing else may break.
 
 ## Architecture
 

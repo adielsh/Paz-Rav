@@ -46,6 +46,18 @@ artifacts/
 *.tfstate.*
 docker-compose.override.yml
 
+# ---- IBKR gateway state (contains login / session material) ----
+ibgw-settings/
+tws-settings/
+Jts/
+
+# ---- Local runtime state ----
+logs/
+*.db
+pgdata/
+.vite/
+.claude/settings.local.json
+
 # ---- OS / editor ----
 .DS_Store
 Thumbs.db

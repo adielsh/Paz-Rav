@@ -11,6 +11,7 @@ import Account from "./pages/Account";
 import Analytics from "./pages/Analytics";
 import RealAccount from "./pages/RealAccount";
 import Proposals from "./pages/Proposals";
+import Ideas from "./pages/Ideas";
 import Login, { resetTokenFromUrl } from "./pages/Login";
 import Settings from "./pages/Settings";
 
@@ -44,6 +45,7 @@ export default function App() {
             route so "/" can never open on simulated numbers. */}
         <Route index element={<Navigate to="/real" replace />} />
         <Route path="overview" element={<Overview />} />
+        <Route path="ideas" element={<Ideas />} />
         <Route path="approvals" element={<Proposals />} />
         <Route path="settings" element={<Settings />} />
         <Route path="real" element={<RealAccount />} />

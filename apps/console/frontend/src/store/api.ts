@@ -2,6 +2,7 @@ import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 import type {
   Trade, GateDecision, Control, PnlSummary, PnlPoint, TradeProposal,
   IbStatus, IbAccount, IbPosition, IbExecution, IbOrders, IbList, FlexData, IbPnl, IbNavSeries,
+  EngineTop, EngineHealthResp,
 } from "./types";
 
 // All data flows through one RTK Query slice — automatic caching, refetching, and loading state.
@@ -50,6 +51,12 @@ export const api = createApi({
     ibPnl: b.query<IbPnl, void>({ query: () => "/ib/pnl" }),
     ibNavSeries: b.query<IbNavSeries, void>({ query: () => "/ib/nav-series" }),
     flexData: b.query<FlexData, void>({ query: () => "/flex/data", providesTags: ["Flex"] }),
+    // ---- Paz Rav strategy engine (read-only, advisory — it cannot place an order) ----
+    // Both degrade to { available: false } rather than erroring, so a stopped engine
+    // leaves the rest of the console untouched.
+    engineHealth: b.query<EngineHealthResp, void>({ query: () => "/engine/health" }),
+    engineTop: b.query<EngineTop, number | void>({
+      query: (n = 10) => `/engine/top?n=${n}` }),
   }),
 });
 
@@ -59,4 +66,5 @@ export const {
   useControlQuery, useSetControlMutation, useProposalsQuery, useDecideProposalMutation,
   useIbStatusQuery, useIbAccountQuery, useIbPositionsQuery, useIbExecutionsQuery, useIbOrdersQuery,
   useIbPnlQuery, useIbNavSeriesQuery, useFlexDataQuery,
+  useEngineHealthQuery, useEngineTopQuery,
 } = api;

@@ -79,3 +79,63 @@ export interface IbPnl {
 }
 export interface NavPoint { ts: string; net_liq: number | null; daily_pnl: number | null; unrealized: number | null; }
 export interface IbNavSeries { connected: boolean; live: IbPnl; series: NavPoint[]; }
+
+/* ---------------------------------------------------------------------------
+ * The Paz Rav strategy engine (src/paz_rav/), reached through /api/engine/*.
+ *
+ * Advisory only: the engine ranks candidates, it never places an order. These
+ * mirror src/paz_rav/store/serialize.py::candidate_to_dict plus the two keys
+ * /api/top adds on top of it (u_idx, verdict).
+ *
+ * Every engine response carries `available` — stamped by the proxy, false when
+ * the engine is down. Branch on it before reading anything else.
+ * ------------------------------------------------------------------------ */
+
+export interface EngineOffline { available: false; error: string }
+
+export interface EngineHealth {
+  available: true;
+  status: string;
+  version: string;
+  underlyings: string[];
+  strategies: string[];
+  /** "yfinance" = ~15-min delayed. "fixture" = the offline sample chain. */
+  data_source: string;
+}
+
+export interface EngineLeg {
+  side: "buy" | "sell";
+  option_type: "call" | "put";
+  strike: number;
+  quantity: number;
+  /** Set only by multi-expiry structures (DACS); null means the structure's own expiry. */
+  expiry?: string | null;
+  iv?: number | null;
+  delta?: number | null;
+}
+
+/** Every dollar figure here is PER SHARE. A US contract is x100 — see usdContract(). */
+export interface EngineCandidate {
+  underlying: string;
+  strategy: string;
+  dte: number;
+  legs: EngineLeg[];
+  credit: number;
+  width: number;
+  max_profit: number;
+  max_loss: number;
+  breakevens: number[];
+  /** Probability of profit, 0..1. */
+  pop: number;
+  score: number;
+  meta?: Record<string, number | string>;
+  /** Rank within its own underlying — the handle for /engine/payoff and /engine/explain. */
+  u_idx?: number;
+  /** The deterministic committee's call. "pass" is filtered out server-side. */
+  verdict?: "take" | "caution";
+}
+
+export interface EngineTopGroup { strategy: string; trades: EngineCandidate[] }
+export interface EngineTopOk { available: true; groups: EngineTopGroup[] }
+export type EngineTop = EngineTopOk | EngineOffline;
+export type EngineHealthResp = EngineHealth | EngineOffline;

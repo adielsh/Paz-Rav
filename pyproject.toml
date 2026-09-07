@@ -25,6 +25,9 @@ feeds = ["yfinance>=0.2.40", "ib_async>=1.0"]
 # Phase 2 — the two-agent judgment layer (Analyst<->Critic loop + tracing).
 agents = ["anthropic>=0.25", "langgraph>=0.2", "langfuse>=2.0"]  # optional: sequential fallback if absent
 dev = ["pytest>=8.0", "ruff>=0.4", "mypy>=1.9", "fakeredis>=2.20"]
+# The console half of the monorepo (apps/console/). Only needed to run ITS test
+# suite from this root; the engine suite deliberately needs none of it.
+console = ["SQLAlchemy>=2.0", "psycopg[binary]>=3.1", "pandas_market_calendars", "pytz"]
 
 [build-system]
 requires = ["hatchling"]
@@ -34,8 +37,19 @@ build-backend = "hatchling.build"
 packages = ["src/paz_rav"]
 
 [tool.pytest.ini_options]
+# `python -m pytest` runs the ENGINE suite only, and deliberately so: it needs no
+# infrastructure, no network and no extra installs, and that property is worth keeping.
+#
+# The console's suite (apps/console/trading-core/tests) needs SQLAlchemy and
+# pandas_market_calendars, so it is opt-in. Both suites, from this root:
+#     pip install -e ".[console]"
+#     python -m pytest tests apps/console/trading-core/tests
+# `pythonpath` below already resolves its `from app.config import ...` imports.
 testpaths = ["tests"]
-pythonpath = ["src"]
+# NOTE: apps/console/api is deliberately absent. Both api/app and trading-core/app are
+# top-level packages literally named `app`; only one can resolve, and trading-core is the
+# one with tests.
+pythonpath = ["src", "apps/console/trading-core"]
 addopts = "-q"
 
 [tool.ruff]
