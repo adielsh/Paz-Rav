@@ -60,7 +60,8 @@ async def _build_real_stores(settings):
     from paz_rav.store.redis_store import RedisFeatureStore, RedisIVHistory
 
     r = aioredis.from_url(settings.redis_url, decode_responses=True)
-    candidate_repo = await PostgresCandidateRepository.connect(settings.database_url)
+    candidate_repo = await PostgresCandidateRepository.connect(
+        settings.database_url, retention_days=settings.candidate_retention_days)
     position_repo = await PostgresPositionRepository.connect(settings.database_url)
     access_repo = await PostgresAccessRequestRepository.connect(settings.database_url)
     # pgvector case-memory — degrades to in-memory if the extension isn't available (a

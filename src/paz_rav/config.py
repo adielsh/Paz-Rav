@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     # (real persistence — features/IV-history/bus on Redis, candidates on Postgres;
     # needs `docker compose up -d` running first).
     paz_persist: str = "memory"
+    # How long a scanned candidate stays queryable, in days. The scanner writes roughly
+    # 60k rows/day (9 underlyings × ~10 candidates, every 60s) and nothing but `latest()`
+    # ever reads them, so without a ceiling the table grows without bound — in the same
+    # database that holds real trading data. 0 disables pruning entirely.
+    candidate_retention_days: int = 7
 
     # ---- auth (public deployment) ----
     # Firebase Google Sign-In verification. Empty allowed_email -> auth is OFF (local/dev
