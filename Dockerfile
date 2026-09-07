@@ -24,7 +24,8 @@ COPY pyproject.toml ./
 RUN pip install \
     "fastapi>=0.110" "uvicorn[standard]>=0.29" "pydantic>=2.6" "pydantic-settings>=2.2" \
     "redis>=5.0" "asyncpg>=0.29" "httpx>=0.27" "yfinance>=0.2.40" "pyjwt[crypto]>=2.9" \
-    "langgraph>=0.2" "langfuse>=2.0" "anthropic>=0.25"
+    "langgraph>=0.2" "langfuse>=2.0" "anthropic>=0.25" \
+    "ib_async==2.1.0"
 
 COPY src/ ./src/
 COPY tests/fixtures/ ./tests/fixtures/

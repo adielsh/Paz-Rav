@@ -12,7 +12,7 @@ which half you are in before you change anything.
 | Job | Scans ~9 underlyings, ranks Iron Condor + DACS candidates, reasons about them | Trades one strategy (SPX iron condor) on IBKR for real |
 | Trades? | **No.** No broker connection, no order route. Advisory only | **Yes.** `trading-core` is the only service that can place an order |
 | UI | `web/` — its own dashboard, on :8010, pending migration | `apps/console/frontend/` — **the primary UI**, on :8080 |
-| Data | yfinance (delayed) or a fixture. `adapters/ibkr.py` is still a stub | Live IB gateway via `ib_async` |
+| Data | yfinance (delayed) by default; `PAZ_DATA=ibkr` reads the same gateway | Live IB gateway via `ib_async` |
 | DB schema | `engine` | `public` |
 | Guidance | this file | `apps/console/CLAUDE.md` |
 
@@ -67,8 +67,16 @@ Two things about that compose file that will cost you an afternoon if you miss t
   it never reaches a `CREATE TABLE`, so it cannot leak tables into the console's `public`
   schema. `docs/MONOREPO.md` also covers the collation reindex after the image swap.
 
-`PAZ_DATA` selects the engine's feed: `yfinance` (delayed, the default) or `fixture`
-(offline demo data).
+`PAZ_DATA` selects the engine's feed: `yfinance` (delayed, the default), `ibkr` (the same
+gateway the console's daemon trades through) or `fixture` (offline demo data).
+
+**On `ibkr`, respect the market-data line budget.** IBKR caps ~100 concurrent lines per
+login and the trading daemon shares that cap; exceeding it returns nothing silently rather
+than raising, so a careless scan degrades the only service that can place an order. The
+adapter holds at most `IB_MAX_LINES` (32) and uses its own `IB_CLIENT_ID` (25 — the daemon
+holds 11, the console API rotates 12–23). One underlying costs ~15–20s, so raise
+`SCAN_INTERVAL` to ≥300 and keep `UNDERLYINGS` short on that feed. Full detail and the two
+traps a live run exposed: `docs/MONOREPO.md`.
 
 ### Backend (Python), running from source
 ```bash

@@ -80,10 +80,14 @@ async def _build_real_stores(settings):
 
 def create_app(
     *, feed=None, underlyings: list[str] | None = None,
-    interval: float = 60.0, initial_scan: bool = True,
+    interval: float | None = None, initial_scan: bool = True,
     config: BuildConfig | None = None, today: date | None = None,
 ) -> FastAPI:
     settings = get_settings()
+    # An explicit argument still wins (tests pass one); otherwise take the configured
+    # interval, which has to be raised for the IBKR feed. See Settings.scan_interval.
+    if interval is None:
+        interval = settings.scan_interval
     if feed is None:
         if settings.paz_data == "fixture":
             from paz_rav.adapters.market_data import ReplayMarketData
@@ -91,6 +95,19 @@ def create_app(
             feed = ReplayMarketData(fixture)
             underlyings = underlyings or ["SPX", "SPY", "QQQ", "IWM", "NVDA", "MSFT", "GOOGL", "AMZN", "CSCO"]
             today = today if today is not None else date(2026, 1, 15)  # fixture as-of
+        elif settings.paz_data == "ibkr":
+            # The same gateway the console's daemon trades through, so an engine idea and
+            # a broker order are finally priced off one source. Note the line budget in
+            # adapters/ibkr.py: keep UNDERLYINGS short on this feed.
+            from paz_rav.adapters import IBKRMarketData
+            feed = IBKRMarketData(
+                settings.ib_host, settings.ib_port, settings.ib_client_id,
+                market_data_type=settings.ib_market_data_type,
+                max_lines=settings.ib_max_lines,
+                strikes_each_side=settings.ib_strikes_each_side,
+                moneyness=settings.ib_moneyness,
+                quote_timeout=settings.ib_quote_timeout,
+            )
         else:
             from paz_rav.adapters import YFinanceMarketData
             feed = YFinanceMarketData()

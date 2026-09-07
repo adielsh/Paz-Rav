@@ -219,9 +219,27 @@ services:
         condition: service_healthy
       advisor:
         condition: service_started   # loosely coupled: the engine has an in-process fallback
+      ib-gateway:
+        condition: service_started   # only actually used when PAZ_DATA=ibkr
     environment:
       PAZ_PERSIST: redis_postgres
       PAZ_DATA: ${PAZ_DATA:-yfinance}
+      # ---- IBKR feed (only read when PAZ_DATA=ibkr) ----
+      # Same gateway the daemon trades through, reached over the docker network via its
+      # socat port. clientId 25 avoids the daemon's 11 and the console API's 12-23.
+      IB_HOST: ib-gateway
+      IB_PORT: "4004"
+      IB_CLIENT_ID: "25"
+      IB_MARKET_DATA_TYPE: ${IB_MARKET_DATA_TYPE:-3}
+      # IBKR caps ~100 concurrent market-data lines PER LOGIN and the trading daemon
+      # shares that cap; going over returns nothing silently instead of erroring. Raising
+      # this risks starving the only service that can actually place an order.
+      IB_MAX_LINES: ${IB_MAX_LINES:-32}
+      IB_STRIKES_EACH_SIDE: ${IB_STRIKES_EACH_SIDE:-18}
+      # 60s suits yfinance (one HTTP call per chain). The IBKR feed quotes contract by
+      # contract under a line budget — ~15-20s per underlying — so raise this to at least
+      # 300 when PAZ_DATA=ibkr, or scans will overlap.
+      SCAN_INTERVAL: ${SCAN_INTERVAL:-60}
       # Same database as the console; the `paz` role's search_path puts these tables in
       # the `engine` schema (infra/postgres/init/10-engine-schema.sql).
       DATABASE_URL: postgresql://paz:paz@postgres:5432/condor

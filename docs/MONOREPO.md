@@ -135,6 +135,60 @@ git remote -v                   # `console` -> github.com/adielsh/OTSROTAY, for 
 Note the first form needs the commit id: `git log -- apps/console` follows the path, not
 the grafted history, so it will not list the pre-merge commits on its own.
 
+## The IBKR feed
+
+`PAZ_DATA=ibkr` points the engine at the **same gateway the console's daemon trades
+through**, which is what makes an engine idea and a broker order comparable at all —
+yfinance is a different vendor whose chains need not agree strike-for-strike with what
+IBKR would fill.
+
+It does **not** fetch greeks. The builder computes its own delta and IV from the quote
+(`builder.annotate` → `analytics.iv.contract_iv` → `quant.greeks`), so the project's rule
+that every number comes from deterministic Python is untouched. IBKR's model IV rides
+free on the same subscription and is used only as an input to that same path.
+
+### The constraint that shapes the whole adapter
+
+IBKR caps concurrent market-data lines (~100 per login) and **the daemon that places
+orders shares that cap**. Going over does not raise — requests silently return nothing —
+so a careless scan would degrade live trading to serve a ranking engine. Hence:
+
+| Knob | Default | Why |
+|---|---|---|
+| `IB_MAX_LINES` | 32 | Far below the cap, leaving the daemon room. Never opens more at once. |
+| `IB_STRIKES_EACH_SIDE` | 18 | Cap per side after thinning. |
+| `IB_MONEYNESS` | 0.12 | Band around spot the strikes are drawn from. |
+| `IB_CLIENT_ID` | 25 | Must avoid the daemon's 11 and the console API's 12–23. |
+| `SCAN_INTERVAL` | 60 | **Raise to ≥300 for this feed.** |
+
+The strike window needs both halves. A pure percentage band is unbounded (±12% of SPY on
+a $1 ladder is ~180 strikes); a pure count of the nearest strikes is far too *narrow* —
+18 each side of a $769 spot reaches only ±2.3%, and a 16-delta short strike at 35 DTE
+sits well outside that, so the chain came back bounded, valid and useless. The adapter
+takes the band and **thins it evenly**, keeping reach at a coarser granularity.
+
+### Measured
+
+One underlying costs ~15–20s (two expiries, ~50 contracts each), so nine names overrun a
+60-second interval. Run a short `UNDERLYINGS` list with a long `SCAN_INTERVAL`, or keep
+yfinance for breadth and use IBKR for the names you would really trade.
+
+```bash
+PAZ_DATA=ibkr UNDERLYINGS=SPX,SPY SCAN_INTERVAL=300 docker compose up -d engine
+```
+
+### Two traps found by actually running it
+
+- **IBKR returns several option classes per underlying.** For SPY it answers `2SPY` — an
+  adjusted class with a sparse ladder and two expiries — alongside the real `SPY`. Taking
+  the first SMART entry picked `2SPY` and every strike came back *"No security definition
+  has been found"*: a chain that looked empty rather than wrong. `_pick_chain` prefers the
+  PM-settled weeklies (`SPXW`, what the daemon trades), then the exactly-named class,
+  breaking ties on the most complete ladder.
+- **Outside RTH there is no bid/ask at all**, only `last`/`close`. That is fine — the
+  builder already falls back to `last` — but it means an off-hours scan cannot be judged
+  on spreads, and `rel_spread` reads 0 ("unknown"), not "tight".
+
 ## Testing
 
 ```bash
@@ -151,11 +205,10 @@ Keep it that way — that is why the console suite is opt-in rather than in `tes
 
 Honest list, because "one repo" is not the same as "one system":
 
-1. **The engine still runs on delayed yfinance data**, not the IB gateway sitting next to it.
-   `adapters/ibkr.py` is a stub with the right 4-method shape;
-   `apps/console/trading-core/app/data_fetcher.py` already implements every one of those
-   reads against `ib_async`. This is the highest-value next step, and until it lands the
-   `/ideas` page labels its data source on every scan.
+1. **The engine *can* now read the IB gateway, but does not by default.**
+   `adapters/ibkr.py` is implemented and validated end-to-end (see below); `PAZ_DATA`
+   still defaults to `yfinance` because IBKR cannot sustain the engine's default shape.
+   The `/ideas` page names the live source on every scan either way.
 2. **Engine candidates cannot become trades.** The console has the whole approval pipeline —
    proposal card, re-price-and-re-validate, order path — pointed at one hard-coded SPX
    condor. Feeding it the engine's ranked candidates is a database write, not a new feature.

@@ -41,8 +41,36 @@ class Settings(BaseSettings):
     # SPX first (primary iron-condor name) + ETFs + big single names.
     underlyings: str = "SPX,SPY,QQQ,IWM,NVDA,MSFT,GOOGL,AMZN,CSCO"
     agent_concurrency: int = 4
-    # data source: "yfinance" (live, free, delayed) or "fixture" (offline, always works)
+    # data source: "yfinance" (free, delayed), "ibkr" (the same gateway the console's
+    # daemon trades through) or "fixture" (offline, always works)
     paz_data: str = "yfinance"
+
+    # ---- IBKR feed (only read when paz_data == "ibkr") ----
+    # Inside compose the gateway is reachable at ib-gateway:4004 (its socat port); from
+    # the host it is 127.0.0.1:4002.
+    ib_host: str = "127.0.0.1"
+    ib_port: int = 4002
+    # MUST NOT collide with the console: its daemon holds clientId 11 and its API rotates
+    # through 12-23. A repeated clientId makes the gateway hang the handshake.
+    ib_client_id: int = 25
+    # 1 = live, 3 = delayed. Delayed is the default because an account without an option
+    # data subscription returns EMPTY quotes on type 1 rather than an error.
+    ib_market_data_type: int = 3
+    # Concurrent market-data lines. IBKR caps ~100 per login and the trading daemon shares
+    # that cap; exceeding it returns nothing silently rather than raising, so this stays
+    # deliberately low. Raising it risks starving the service that actually places orders.
+    ib_max_lines: int = 32
+    # Strikes are taken from a +-`ib_moneyness` band around spot, thinned evenly to at
+    # most `ib_strikes_each_side` per side. The band gives reach (a 16-delta short strike
+    # at 35 DTE is nowhere near spot); the cap keeps a $1 ladder from blowing the budget.
+    ib_strikes_each_side: int = 18
+    ib_moneyness: float = 0.12
+    ib_quote_timeout: float = 6.0
+    # Seconds between full scans of the universe. 60 is fine for yfinance, which answers
+    # a whole chain in one HTTP call. It is NOT enough for the IBKR feed: that quotes
+    # contract by contract under a line budget, so one underlying takes ~15-20s and nine
+    # of them overrun the interval. Raise this when PAZ_DATA=ibkr.
+    scan_interval: float = 60.0
     # storage: "memory" (default, nothing survives a restart) or "redis_postgres"
     # (real persistence — features/IV-history/bus on Redis, candidates on Postgres;
     # needs `docker compose up -d` running first).
