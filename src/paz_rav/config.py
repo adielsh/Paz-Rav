@@ -66,6 +66,12 @@ class Settings(BaseSettings):
     ib_strikes_each_side: int = 18
     ib_moneyness: float = 0.12
     ib_quote_timeout: float = 6.0
+    # Minimum open interest for a strike to be usable. 10 is a sane liquidity floor on
+    # yfinance, which reports OI. IBKR's DELAYED feed does not populate it (every strike
+    # comes back 0-1), so on that feed a floor of 10 silently rejects the entire chain and
+    # the scan produces nothing at all. Set 0 with PAZ_DATA=ibkr and rely on the relative
+    # spread for liquidity instead -- knowingly, because it is a weaker gate.
+    min_open_interest: int = 10
     # Seconds between full scans of the universe. 60 is fine for yfinance, which answers
     # a whole chain in one HTTP call. It is NOT enough for the IBKR feed: that quotes
     # contract by contract under a line budget, so one underlying takes ~15-20s and nine

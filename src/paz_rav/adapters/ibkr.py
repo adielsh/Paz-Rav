@@ -128,8 +128,17 @@ class IBKRMarketData:
         self.max_lines = max_lines
         self.strikes_each_side = strikes_each_side
         self.moneyness = moneyness
+        # Ceiling on how many strikes we ask IBKR to *define* per expiry. Costs no
+        # market-data lines, only a definition lookup, so it can be far above the quote
+        # budget -- generous enough that a coarse ladder still yields enough listed
+        # strikes to thin down from.
+        self._qualify_cap = max(strikes_each_side * 6, 60)
         self.quote_timeout = quote_timeout
         self.connect_timeout = connect_timeout
+        # A POOL, not one id — see _connect. Sized to outlast a few restarts, and kept
+        # clear of the console's ids (its daemon holds 11, its API rotates 12-23).
+        self._client_ids = list(range(client_id, client_id + 10))
+        self._ci = 0
         self._ib = None
         self._lock = asyncio.Lock()
         # reqSecDefOptParamsAsync is slow and its answer (expiries, strike ladder) changes
@@ -139,7 +148,17 @@ class IBKRMarketData:
     # ---------------------------------------------------------------- connection --
 
     async def _connect(self):
-        """Lazy, serialised connect. Reconnects if the gateway dropped us."""
+        """Lazy, serialised connect on a FRESH IB() with a ROTATING clientId.
+
+        Reusing one clientId looks correct and fails in production. When this container
+        restarts, the gateway can still hold the previous session under that id; the new
+        connect then either hangs the handshake or succeeds but returns empty quotes
+        forever — indistinguishable from "no market-data subscription". Observed exactly
+        that: every symbol failed until a fresh id was used.
+
+        The console's ib_bridge already solved this the same way (it rotates 12-23), so
+        this is the house pattern, not an invention.
+        """
         from ib_async import IB
 
         async with self._lock:
@@ -150,12 +169,15 @@ class IBKRMarketData:
                     self._ib.disconnect()
                 except Exception:
                     pass
+            cid = self._client_ids[self._ci % len(self._client_ids)]
+            self._ci += 1
             ib = IB()
             await asyncio.wait_for(
-                ib.connectAsync(self.host, self.port, clientId=self.client_id,
+                ib.connectAsync(self.host, self.port, clientId=cid,
                                 timeout=self.connect_timeout),
                 timeout=self.connect_timeout + 5,
             )
+            self.client_id = cid
             # Without this, an account with no live subscription returns empty quotes
             # rather than falling back to delayed on its own.
             ib.reqMarketDataType(self.market_data_type)
@@ -264,47 +286,51 @@ class IBKRMarketData:
         ib = await self._connect()
         spot = (await self.underlying(symbol)).price
         _, strikes, trading_class = await self._chain_params(ib, symbol)
-        window = self._strike_window(strikes, spot)
-        if not window:
+        band = self._band(strikes, spot)
+        if not band:
             return []
 
         from ib_async import Option
 
+        # Qualify FIRST, thin AFTER. `qualifyContractsAsync` is a contract-definition
+        # lookup: it costs no market-data lines, unlike reqMktData. Thinning before
+        # qualifying spent the whole budget on strikes that turned out not to exist --
+        # SPX advertises a 744-strike ladder spanning every expiry, but any single weekly
+        # lists only a coarse subset of it, so an evenly-thinned band qualified 2 of 6 and
+        # the scan produced nothing. Qualifying generously and thinning the SURVIVORS
+        # spends the budget only on contracts that are really listed.
         ymd = expiry.strftime("%Y%m%d")
-        contracts = [Option(symbol.upper(), ymd, k, r, "SMART", tradingClass=trading_class)
-                     for k in window for r in ("P", "C")]
-        await ib.qualifyContractsAsync(*contracts)
-        # The ladder advertises strikes across ALL expiries, so many are not listed for
-        # this one and come back unqualified. Requesting data on those raises.
-        contracts = [c for c in contracts if c.conId]
-        if not contracts:
+        probe = [Option(symbol.upper(), ymd, k, r, "SMART", tradingClass=trading_class)
+                 for k in _thin(band, self._qualify_cap) for r in ("P", "C")]
+        await ib.qualifyContractsAsync(*probe)
+        listed = sorted({c.strike for c in probe if c.conId})
+        if not listed:
             log.warning("No strikes qualified for %s %s", symbol, expiry)
             return []
 
+        keep = set(self._per_side(listed, spot))
+        contracts = [c for c in probe if c.conId and c.strike in keep]
         quotes = await self._quote_all(ib, contracts)
-        log.info("IBKR chain %s %s: %d strikes -> %d contracts -> %d quotes",
-                 symbol, expiry, len(window), len(contracts), len(quotes))
+        log.info("IBKR chain %s %s: band=%d probed=%d listed=%d quoted=%d -> %d quotes",
+                 symbol, expiry, len(band), len(probe), len(listed),
+                 len(contracts), len(quotes))
         return quotes
 
-    def _strike_window(self, strikes: list[float], spot: float) -> list[float]:
-        """Strikes within ±`moneyness` of spot, thinned to `strikes_each_side` per side.
+    def _band(self, strikes: list[float], spot: float) -> list[float]:
+        """Every advertised strike within ±`moneyness` of spot.
 
-        Both halves of this are needed, and neither alone works:
-
-        - A pure **percentage band** is unbounded — ±12% of SPY on a $1 ladder is ~180
-          strikes, which blows the line budget on one underlying.
-        - A pure **count** of the nearest strikes is far too narrow on that same ladder:
-          18 strikes each side of a $769 spot reaches ±2.3%, and a 16-delta short strike
-          at 35 DTE sits well outside that. The scan would return a chain that is bounded,
-          valid, and useless — it never sees the strikes the strategies want.
-
-        So: take the band, then subsample it *evenly* rather than truncating. Coverage
-        reaches the delta targets at a coarser granularity, and the request stays bounded
-        on any strike spacing.
+        A percentage band, not a count of the nearest strikes: 18 strikes each side of a
+        $769 spot reaches only ±2.3%, and a 16-delta short strike at 35 DTE sits well
+        outside that — the chain came back bounded, valid and useless. The band gives the
+        reach; `_per_side` supplies the bound, after qualification.
         """
         lo, hi = spot * (1.0 - self.moneyness), spot * (1.0 + self.moneyness)
-        below = [k for k in strikes if lo <= k <= spot]
-        above = [k for k in strikes if spot < k <= hi]
+        return [k for k in strikes if lo <= k <= hi]
+
+    def _per_side(self, listed: list[float], spot: float) -> list[float]:
+        """Thin the LISTED strikes to `strikes_each_side` each side, spread evenly."""
+        below = [k for k in listed if k <= spot]
+        above = [k for k in listed if k > spot]
         return _thin(below, self.strikes_each_side) + _thin(above, self.strikes_each_side)
 
     async def _quote_all(self, ib, contracts) -> list[OptionQuote]:

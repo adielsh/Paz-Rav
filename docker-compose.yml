@@ -240,6 +240,10 @@ services:
       # contract under a line budget — ~15-20s per underlying — so raise this to at least
       # 300 when PAZ_DATA=ibkr, or scans will overlap.
       SCAN_INTERVAL: ${SCAN_INTERVAL:-60}
+      # Liquidity floor. IBKR's DELAYED feed does not populate open interest, so a floor
+      # of 10 rejects every strike and the scan silently produces nothing. Set 0 on that
+      # feed and lean on the relative spread instead.
+      MIN_OPEN_INTEREST: ${MIN_OPEN_INTEREST:-10}
       # Same database as the console; the `paz` role's search_path puts these tables in
       # the `engine` schema (infra/postgres/init/10-engine-schema.sql).
       DATABASE_URL: postgresql://paz:paz@postgres:5432/condor

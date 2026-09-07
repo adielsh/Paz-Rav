@@ -87,6 +87,8 @@ class FakeIB:
         return self._connected
 
     async def connectAsync(self, host, port, clientId, timeout):
+        self.client_ids_used = getattr(self, "client_ids_used", [])
+        self.client_ids_used.append(clientId)
         self._connected = True
 
     def disconnect(self):
@@ -328,3 +330,62 @@ def test_index_symbols_route_to_their_own_exchange(fake_ib):
 def test_satisfies_the_market_data_port(fake_ib):
     from paz_rav.adapters.market_data import MarketData
     assert isinstance(_adapter(), MarketData)
+
+
+def test_client_id_rotates_across_reconnects(fake_ib):
+    """A stale session at the gateway makes a REPEATED clientId return empty quotes
+    forever — indistinguishable from having no market-data subscription. Observed in a
+    live run: every symbol failed until a fresh id was used. The console's ib_bridge
+    rotates for the same reason."""
+    md = _adapter(client_id=25)
+    _run(md.underlying("SPY"))
+    fake_ib.disconnect()                       # the gateway drops us
+    _run(md.underlying("SPY"))
+    fake_ib.disconnect()
+    _run(md.underlying("SPY"))
+    used = fake_ib.client_ids_used
+    assert len(used) == 3
+    assert len(set(used)) == 3, f"clientId did not rotate: {used}"
+    assert used == [25, 26, 27]
+
+
+def test_client_id_pool_avoids_the_console(fake_ib):
+    """The console's daemon holds 11 and its API rotates 12-23. A collision hangs the
+    handshake for whichever connects second."""
+    md = _adapter(client_id=25)
+    assert not (set(md._client_ids) & set(range(11, 24)))
+
+
+def test_connection_is_reused_while_it_is_alive(fake_ib):
+    """Rotation is for RECONNECTS; a live session must not be rebuilt per call."""
+    md = _adapter()
+    _run(md.underlying("SPY"))
+    _run(md.underlying("SPY"))
+    assert len(fake_ib.client_ids_used) == 1
+
+
+def test_budget_is_spent_only_on_strikes_that_exist(fake_ib):
+    """The SPX failure: an evenly-thinned band qualified 2 of 6 and the scan produced
+    nothing. SPX advertises a 744-strike ladder spanning every expiry, but any single
+    weekly lists only a coarse subset. Qualifying costs no market-data lines, so the
+    adapter qualifies generously and thins the SURVIVORS — the quote budget must never be
+    spent on a contract that is not listed."""
+    # Only every 10th strike is really listed for this expiry.
+    fake_ib.strikes = [float(k) for k in range(1, 401)]
+    fake_ib.unqualified = {float(k) for k in range(1, 401) if k % 10 != 0}
+    md = _adapter(strikes_each_side=5, moneyness=0.5)
+    _run(md.chain("SPY", date(2026, 11, 20)))
+    quoted = {c.strike for c in fake_ib.option_requests()}
+    assert quoted, "should still find the listed strikes"
+    assert all(k % 10 == 0 for k in quoted), f"quoted unlisted strikes: {sorted(quoted)[:5]}"
+    assert len(quoted) <= 10                      # <= strikes_each_side per side
+
+
+def test_qualification_is_not_charged_against_the_line_budget(fake_ib):
+    """Qualifying is a definition lookup, not a subscription. It must not open lines."""
+    fake_ib.strikes = [float(k) for k in range(1, 401)]
+    md = _adapter(strikes_each_side=4, moneyness=0.5, max_lines=8)
+    _run(md.chain("SPY", date(2026, 11, 20)))
+    assert fake_ib.peak_lines <= 8
+    # Far more contracts were defined than were ever quoted.
+    assert len(fake_ib.option_requests()) <= 8 * 2

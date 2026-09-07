@@ -177,7 +177,7 @@ yfinance for breadth and use IBKR for the names you would really trade.
 PAZ_DATA=ibkr UNDERLYINGS=SPX,SPY SCAN_INTERVAL=300 docker compose up -d engine
 ```
 
-### Two traps found by actually running it
+### Four traps found by actually running it
 
 - **IBKR returns several option classes per underlying.** For SPY it answers `2SPY` — an
   adjusted class with a sparse ladder and two expiries — alongside the real `SPY`. Taking
@@ -188,6 +188,19 @@ PAZ_DATA=ibkr UNDERLYINGS=SPX,SPY SCAN_INTERVAL=300 docker compose up -d engine
 - **Outside RTH there is no bid/ask at all**, only `last`/`close`. That is fine — the
   builder already falls back to `last` — but it means an off-hours scan cannot be judged
   on spreads, and `rel_spread` reads 0 ("unknown"), not "tight".
+- **A fixed clientId breaks on restart.** The gateway can still hold the previous session
+  under that id; the next connect then returns empty quotes forever — indistinguishable
+  from having no subscription. Every symbol failed until a fresh id was used. The adapter
+  rotates a pool (25–34), which is what the console's `ib_bridge` already does (12–23).
+- **Thin the strikes *after* qualifying, not before.** `qualifyContractsAsync` is a
+  definition lookup and costs no market-data lines; only `reqMktData` does. SPX advertises
+  a 744-strike ladder spanning every expiry, but a single weekly lists a coarse subset of
+  it — an evenly-thinned band qualified 2 of 6 and produced nothing. Qualifying generously
+  and thinning the survivors took SPX from 4 quotes to 28.
+- **`min_open_interest` silently empties the chain.** IBKR's *delayed* feed does not
+  populate open interest (every strike reads 0–1), so the default floor of 10 rejected
+  every candidate while the scan looked perfectly healthy. `MIN_OPEN_INTEREST=0` on this
+  feed, leaning on relative spread instead — knowingly, because it is a weaker gate.
 
 ## Testing
 
