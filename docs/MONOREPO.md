@@ -63,6 +63,24 @@ engine, public` is what routes them. See `infra/postgres/init/10-engine-schema.s
 > docker compose exec postgres psql -U condor -d condor \
 >   -f /docker-entrypoint-initdb.d/10-engine-schema.sql
 > ```
+> On **Git Bash for Windows**, prefix it with `MSYS_NO_PATHCONV=1` — otherwise the shell
+> rewrites the container path into a Windows one and psql reports "No such file".
+>
+> Until it is applied the engine fails at startup with
+> `InvalidPasswordError: password authentication failed for user "paz"`. That is the
+> intended failure: it dies before any `CREATE TABLE`, so it can never leak its tables
+> into the console's `public` schema.
+
+### If you moved from a plain `postgres:16` volume
+
+`pgvector/pgvector:pg16` ships a different glibc, so an existing database will warn about a
+**collation version mismatch**. Left alone, text index ordering can silently disagree with
+the collation it was built under. Fix it once:
+
+```bash
+docker compose exec -T postgres psql -U condor -d condor -c "REINDEX DATABASE condor;"
+docker compose exec -T postgres psql -U condor -d condor -c "ALTER DATABASE condor REFRESH COLLATION VERSION;"
+```
 
 The console keeps SQLAlchemy + psycopg; the engine keeps raw asyncpg. Neither had to move.
 
@@ -104,11 +122,18 @@ apps/console/              THE CONSOLE — imported by git subtree, history pres
   trading-core/tests/      console tests (15)
 ```
 
-`apps/console` came in via `git subtree`, so its full history is reachable:
+`apps/console` came in via `git subtree` (not `--squash`), so the console's original
+history is still in this repo's object store — the old `OTSROTAY` working copy has been
+deleted and this is now the only repo:
+
 ```bash
-git log apps/console            # every OTSROTAY commit
-git remote -v                   # `console` -> the original repo, for future pulls
+git log --oneline ab9b27c       # all 13 original console commits
+git log --oneline apps/console  # commits touching that path since the merge
+git remote -v                   # `console` -> github.com/adielsh/OTSROTAY, for future pulls
 ```
+
+Note the first form needs the commit id: `git log -- apps/console` follows the path, not
+the grafted history, so it will not list the pre-merge commits on its own.
 
 ## Testing
 

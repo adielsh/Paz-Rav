@@ -62,6 +62,10 @@ Two things about that compose file that will cost you an afternoon if you miss t
 - **`infra/postgres/init/` only auto-runs on an empty data directory.** On an existing
   database apply it by hand once:
   `docker compose exec postgres psql -U condor -d condor -f /docker-entrypoint-initdb.d/10-engine-schema.sql`
+  On Git Bash for Windows, prefix that with `MSYS_NO_PATHCONV=1`. Until it is applied the
+  engine dies with `password authentication failed for user "paz"` — the intended failure:
+  it never reaches a `CREATE TABLE`, so it cannot leak tables into the console's `public`
+  schema. `docs/MONOREPO.md` also covers the collation reindex after the image swap.
 
 `PAZ_DATA` selects the engine's feed: `yfinance` (delayed, the default) or `fixture`
 (offline demo data).
